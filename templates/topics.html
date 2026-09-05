@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>原创选题素材包</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Original Topic Desk</p>
+        <h1>原创选题素材包</h1>
+      </div>
+      <div class="actions">
+        <a class="link-button" href="/">采集列表</a>
+        <a class="link-button" href="/drafts">文章草稿</a>
+        <button id="generateButton" class="primary-button" type="button">生成选题</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="status-grid" aria-label="选题状态">
+        <div>
+          <span>{{ topics|length }}</span>
+          <p>候选选题</p>
+        </div>
+        <div>
+          <span>原创</span>
+          <p>写作模式</p>
+        </div>
+        <div>
+          <span>禁搬运</span>
+          <p>原文表达</p>
+        </div>
+      </section>
+
+      <details class="topic-builder">
+        <summary>手动加入选题</summary>
+        <div class="topic-form-grid">
+          <label class="editor-field editor-full">
+            <span>选题标题</span>
+            <input id="manualTopicTitle" type="text" placeholder="例如：某款游戏更新为什么引发玩家争议">
+          </label>
+          <label class="editor-field editor-full">
+            <span>写作角度</span>
+            <textarea id="manualTopicAngle" rows="3" placeholder="这篇文章要回答什么问题，重点写哪些变化和影响"></textarea>
+          </label>
+          <label class="editor-field">
+            <span>主题标签</span>
+            <input id="manualTopicThemes" type="text" placeholder="游戏资讯, 社会热点">
+          </label>
+          <label class="editor-field">
+            <span>主体/关键词</span>
+            <input id="manualTopicEntities" type="text" placeholder="公司、产品、人物、游戏名">
+          </label>
+          <label class="editor-field editor-full">
+            <span>事实素材</span>
+            <textarea id="manualTopicFacts" rows="4" placeholder="每行一条事实、时间或关键背景"></textarea>
+          </label>
+          <label class="editor-field editor-full">
+            <span>原创结构</span>
+            <textarea id="manualTopicStructure" rows="4" placeholder="每行一个段落方向；不填则使用默认结构"></textarea>
+          </label>
+          <label class="editor-field editor-full">
+            <span>来源</span>
+            <textarea id="manualTopicSources" rows="3" placeholder="每行一个来源，可写：来源名 | 标题 | 链接"></textarea>
+          </label>
+        </div>
+        <div class="topic-form-actions">
+          <button id="manualTopicAdd" class="secondary-button" type="button">加入选题</button>
+        </div>
+      </details>
+
+      <section class="topic-list">
+        {% if topics %}
+          {% for topic in topics %}
+            <article class="topic-card" data-topic-id="{{ topic.id }}">
+              <div class="topic-head">
+                <div>
+                  <p class="eyebrow">Score {{ "%.1f"|format(topic.score or 0) }}</p>
+                  <h2>{{ topic.title }}</h2>
+                </div>
+                <div class="topic-side">
+                  <div class="tags">
+                    {% for theme in topic.themes %}
+                      <span>{{ theme }}</span>
+                    {% endfor %}
+                  </div>
+                  <button class="ghost-button danger topic-delete" type="button" data-topic-id="{{ topic.id }}">删除选题</button>
+                </div>
+              </div>
+
+              <p class="angle">{{ topic.angle }}</p>
+
+              <details class="topic-editor">
+                <summary>编辑选题</summary>
+                <div class="topic-form-grid">
+                  <label class="editor-field editor-full">
+                    <span>选题标题</span>
+                    <input class="topic-title-input" type="text" value="{{ topic.title|e }}">
+                  </label>
+                  <label class="editor-field editor-full">
+                    <span>写作角度</span>
+                    <textarea class="topic-angle-input" rows="3">{{ topic.angle|e }}</textarea>
+                  </label>
+                  <label class="editor-field">
+                    <span>主题标签</span>
+                    <input class="topic-themes-input" type="text" value="{{ topic.themes|join(', ')|e }}">
+                  </label>
+                  <label class="editor-field">
+                    <span>主体/关键词</span>
+                    <input class="topic-entities-input" type="text" value="{{ topic.entities|join(', ')|e }}">
+                  </label>
+                  <label class="editor-field editor-full">
+                    <span>事实素材</span>
+                    <textarea class="topic-facts-input" rows="4">{{ topic.facts|join('\n')|e }}</textarea>
+                  </label>
+                  <label class="editor-field editor-full">
+                    <span>原创结构</span>
+                    <textarea class="topic-structure-input" rows="4">{{ topic.structure|join('\n')|e }}</textarea>
+                  </label>
+                  <label class="editor-field editor-full">
+                    <span>来源</span>
+                    <textarea class="topic-sources-input" rows="3">{% for item in topic.source_items %}{{ item.source_name }} | {{ item.title }} | {{ item.url }}
+{% endfor %}</textarea>
+                  </label>
+                </div>
+                <div class="topic-form-actions">
+                  <button class="topic-save" type="button" data-topic-id="{{ topic.id }}">保存选题</button>
+                </div>
+              </details>
+
+              <div class="topic-grid">
+                <section>
+                  <h3>事实素材</h3>
+                  <ul>
+                    {% for fact in topic.facts %}
+                      <li>{{ fact }}</li>
+                    {% endfor %}
+                  </ul>
+                </section>
+                <section>
+                  <h3>原创结构</h3>
+                  <ol>
+                    {% for step in topic.structure %}
+                      <li>{{ step }}</li>
+                    {% endfor %}
+                  </ol>
+                </section>
+              </div>
+
+              <section class="guardrail">
+                <h3>写作边界</h3>
+                <ul>
+                  {% for note in topic.originality_notes %}
+                    <li>{{ note }}</li>
+                  {% endfor %}
+                </ul>
+              </section>
+
+              <details>
+                <summary>来源与禁用原文表达</summary>
+                <div class="source-links">
+                  {% for item in topic.source_items %}
+                    <a href="{{ item.url }}" target="_blank" rel="noreferrer">
+                      {{ item.source_name }} · {{ item.published_at[:10] }} · {{ item.title }}
+                    </a>
+                  {% endfor %}
+                </div>
+                <div class="avoid-list">
+                  {% for phrase in topic.avoid_phrases %}
+                    <span>{{ phrase }}</span>
+                  {% endfor %}
+                </div>
+              </details>
+            </article>
+          {% endfor %}
+        {% else %}
+          <div class="empty">
+            <h2>还没有选题</h2>
+            <p>先运行采集，再点击“生成选题”。系统会把候选新闻聚类成原创写作素材包。</p>
+          </div>
+        {% endif %}
+      </section>
+    </main>
+
+    <script>
+      const button = document.querySelector("#generateButton");
+
+      async function callApi(url, options = {}) {
+        const response = await fetch(url, {
+          headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+          ...options
+        });
+        const payload = await response.json().catch(() => ({ ok: false, message: "接口返回不是 JSON" }));
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.message || `请求失败：${response.status}`);
+        }
+        return payload;
+      }
+
+      function splitLines(value) {
+        return (value || "")
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function splitTags(value) {
+        return (value || "")
+          .split(/[,，、\r\n]+/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function parseTopicSources(value) {
+        return splitLines(value).map((line) => {
+          const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+          if (parts.length >= 3) {
+            return { source_name: parts[0], title: parts[1], url: parts.slice(2).join(" | ") };
+          }
+          if (parts.length === 2) {
+            return parts[0].startsWith("http")
+              ? { url: parts[0], title: parts[1], source_name: "人工来源" }
+              : { title: parts[0], url: parts[1], source_name: "人工来源" };
+          }
+          return line.startsWith("http")
+            ? { url: line, title: line, source_name: "人工来源" }
+            : { title: line, source_name: "人工来源" };
+        });
+      }
+
+      function manualTopicPayload() {
+        return {
+          title: document.querySelector("#manualTopicTitle")?.value || "",
+          angle: document.querySelector("#manualTopicAngle")?.value || "",
+          themes: splitTags(document.querySelector("#manualTopicThemes")?.value || ""),
+          entities: splitTags(document.querySelector("#manualTopicEntities")?.value || ""),
+          facts: splitLines(document.querySelector("#manualTopicFacts")?.value || ""),
+          structure: splitLines(document.querySelector("#manualTopicStructure")?.value || ""),
+          source_items: parseTopicSources(document.querySelector("#manualTopicSources")?.value || "")
+        };
+      }
+
+      function topicPayloadFromCard(card) {
+        return {
+          title: card.querySelector(".topic-title-input")?.value || "",
+          angle: card.querySelector(".topic-angle-input")?.value || "",
+          themes: splitTags(card.querySelector(".topic-themes-input")?.value || ""),
+          entities: splitTags(card.querySelector(".topic-entities-input")?.value || ""),
+          facts: splitLines(card.querySelector(".topic-facts-input")?.value || ""),
+          structure: splitLines(card.querySelector(".topic-structure-input")?.value || ""),
+          source_items: parseTopicSources(card.querySelector(".topic-sources-input")?.value || "")
+        };
+      }
+
+      function setButtonState(target, text, disabled) {
+        target.textContent = text;
+        target.disabled = disabled;
+      }
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "生成中...";
+        try {
+          await callApi("/api/topics/generate", { method: "POST" });
+          window.location.reload();
+        } catch (error) {
+          button.textContent = "生成失败";
+          setTimeout(() => {
+            button.textContent = "生成选题";
+            button.disabled = false;
+          }, 1800);
+        }
+      });
+
+      document.querySelector("#manualTopicAdd")?.addEventListener("click", async (event) => {
+        const target = event.currentTarget;
+        const oldText = target.textContent;
+        setButtonState(target, "加入中...", true);
+        try {
+          await callApi("/api/topics", {
+            method: "POST",
+            body: JSON.stringify(manualTopicPayload())
+          });
+          window.location.reload();
+        } catch (error) {
+          setButtonState(target, "加入失败", true);
+          setTimeout(() => setButtonState(target, oldText, false), 1600);
+        }
+      });
+
+      document.querySelectorAll(".topic-save").forEach((target) => {
+        target.addEventListener("click", async () => {
+          const card = target.closest(".topic-card");
+          const topicId = target.dataset.topicId;
+          if (!card || !topicId) return;
+          const oldText = target.textContent;
+          setButtonState(target, "保存中...", true);
+          try {
+            await callApi(`/api/topics/${encodeURIComponent(topicId)}`, {
+              method: "PUT",
+              body: JSON.stringify(topicPayloadFromCard(card))
+            });
+            window.location.reload();
+          } catch (error) {
+            setButtonState(target, "保存失败", true);
+            setTimeout(() => setButtonState(target, oldText, false), 1600);
+          }
+        });
+      });
+
+      document.querySelectorAll(".topic-delete").forEach((target) => {
+        target.addEventListener("click", async () => {
+          const topicId = target.dataset.topicId;
+          if (!topicId) return;
+          if (!window.confirm("删除这个选题后，旧草稿会被清空，需要按剩余选题重新生成草稿。确认删除？")) return;
+          const oldText = target.textContent;
+          setButtonState(target, "删除中...", true);
+          try {
+            await callApi(`/api/topics/${encodeURIComponent(topicId)}`, { method: "DELETE" });
+            window.location.reload();
+          } catch (error) {
+            setButtonState(target, "删除失败", true);
+            setTimeout(() => setButtonState(target, oldText, false), 1600);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

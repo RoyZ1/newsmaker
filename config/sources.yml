@@ -1,0 +1,607 @@
+# Information source configuration.
+# The collector now requires a real publish timestamp by default.
+# Items without a parseable published_at are skipped.
+
+app:
+  lookback_hours: 72
+  target_items: 50
+  max_items_per_source: 18
+  request_timeout_seconds: 20
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36 WeChat-AI-Daily-Agent/0.2"
+  cache_images: true
+  fetch_article_images: false
+  skip_seen_items: true
+  # Additional domains allowed for the "official screenshot" image action.
+  # Built-in defaults already cover common AI/tech official sites.
+  official_screenshot_domains: []
+  source_lookback_hours:
+    github_ai_recent: 336
+    github_trending_python: 336
+  source_limits:
+    huawei_cn_news: 5
+    huawei_en_news: 4
+    aws_ml_blog: 5
+    microsoft_official_blog: 4
+    samsung_global_newsroom: 4
+    github_ai_recent: 6
+    github_trending_python: 4
+  source_minimums:
+    github_ai_recent: 3
+
+models:
+  summarizer:
+    provider: openai
+    model: gpt-4.1-mini
+    enabled: false
+
+# Public-reaction material collection.
+# Keep disabled unless you provide an authorized API/open-platform/proxy endpoint.
+# The endpoint should accept query and limit params and return comments in JSON.
+opinion_sources:
+  douyin:
+    enabled: false
+    # proxy: call your own authorized endpoint with query/limit.
+    # official_video: call Douyin OpenAPI for one or more video item_id/link comments.
+    # official_keyword: call Douyin OpenAPI keyword search + keyword video comment APIs.
+    mode: official_video
+    endpoint: ""
+    access_token: ""
+    open_base_url: https://open.douyin.com
+    open_access_token: ""
+    open_id: ""
+    client_token: ""
+    keyword_search_token: ""
+    comment_list_url: https://open.douyin.com/item/comment/list/
+    keyword_video_search_url: https://open.douyin.com/video/search/
+    keyword_comment_list_url: https://open.douyin.com/video/search/comment/list/
+  weibo:
+    enabled: false
+    mode: proxy
+    endpoint: ""
+    access_token: ""
+
+sources:
+  # Global official sources
+  - id: openai_news
+    name: OpenAI News
+    type: rss
+    enabled: true
+    url: https://openai.com/news/rss.xml
+    fallback_image: https://images.ctfassets.net/kftzwdyauwt9/U6bb3rlwvYyhf2q835WWx/d50f5492dded3c21aa6d69c07d3b2a44/Introducing_OAI_Partner_Network_artcard.png?fm=webp&q=90&w=3840
+    tags: [openai, official, global]
+    max_items: 12
+
+  - id: anthropic_news
+    name: Anthropic News
+    type: web
+    enabled: true
+    url: https://www.anthropic.com/news
+    item_selector: "a[href*='/news/']"
+    title_selector: "h1"
+    summary_selector: "meta[name='description']"
+    image_selector: "meta[property='og:image']"
+    tags: [anthropic, official, global]
+    max_items: 12
+
+  - id: deepmind_blog
+    name: Google DeepMind Blog
+    type: web
+    enabled: true
+    url: https://deepmind.google/blog/
+    item_selector: "a[href^='/blog/']:not([href='/blog/'])"
+    title_selector: "meta[property='og:title']"
+    summary_selector: "meta[name='description']"
+    image_selector: "meta[property='og:image']"
+    tags: [google, deepmind, official, global]
+    max_items: 12
+
+  - id: huggingface_blog
+    name: Hugging Face Blog
+    type: rss
+    enabled: true
+    url: https://huggingface.co/blog/feed.xml
+    tags: [huggingface, open-source, global]
+    include_keywords: [ai, model, agent, llm, vision, diffusion, robot, inference]
+    max_items: 12
+
+  - id: google_ai_blog
+    name: Google AI Blog
+    type: rss
+    enabled: true
+    url: https://blog.google/technology/ai/rss/
+    tags: [google, official, global, ai]
+    include_keywords: [AI, Gemini, DeepMind, model, agent, robot, search, cloud]
+    max_items: 10
+
+  - id: nvidia_blog
+    name: NVIDIA Blog
+    type: rss
+    enabled: true
+    url: https://blogs.nvidia.com/feed/
+    tags: [nvidia, official, global, ai]
+    include_keywords: [AI, agent, model, robot, GPU, Blackwell, CUDA, inference]
+    max_items: 10
+
+  - id: huawei_cn_news
+    name: Huawei China News
+    type: rss
+    enabled: true
+    url: https://www.huawei.com/cn/rss-feeds/huawei-updates/rss
+    tags: [huawei, official, china, industry]
+    include_keywords:
+      - AI
+      - 人工智能
+      - 大模型
+      - 盘古
+      - 昇腾
+      - 算力
+      - 鸿蒙
+      - HarmonyOS
+      - 智能
+      - 机器人
+      - 智能汽车
+      - 自动驾驶
+      - 云
+    max_items: 10
+
+  - id: huawei_en_news
+    name: Huawei Global News
+    type: rss
+    enabled: true
+    url: https://www.huawei.com/en/rss-feeds/huawei-updates/rss
+    tags: [huawei, official, global, industry]
+    include_keywords:
+      - AI
+      - artificial intelligence
+      - Pangu
+      - Ascend
+      - HarmonyOS
+      - cloud
+      - intelligent
+      - robot
+      - autonomous
+      - smart vehicle
+      - computing
+    max_items: 8
+
+  - id: aws_ml_blog
+    name: AWS Machine Learning Blog
+    type: rss
+    enabled: true
+    url: https://aws.amazon.com/blogs/machine-learning/feed/
+    tags: [aws, amazon, official, global, cloud, ai]
+    include_keywords: [AI, artificial intelligence, machine learning, generative AI, agent, model, Bedrock, SageMaker, inference, robot]
+    fetch_article_images: true
+    max_items: 8
+
+  - id: microsoft_official_blog
+    name: Microsoft Official Blog
+    type: rss
+    enabled: true
+    url: https://blogs.microsoft.com/feed/
+    tags: [microsoft, official, global, cloud, ai]
+    include_keywords: [AI, artificial intelligence, Copilot, Azure, agent, model, cloud, OpenAI]
+    max_items: 8
+
+  - id: samsung_global_newsroom
+    name: Samsung Global Newsroom
+    type: rss
+    enabled: true
+    url: https://news.samsung.com/global/feed
+    tags: [samsung, official, global, device, industry]
+    include_keywords: [AI, Galaxy AI, artificial intelligence, semiconductor, chip, memory, robot, smart, device]
+    max_items: 8
+
+  - id: arxiv_ai
+    name: arXiv AI Papers
+    type: rss
+    enabled: true
+    url: "https://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.CL+OR+cat:cs.CV+OR+cat:cs.LG&sortBy=submittedDate&sortOrder=descending&start=0&max_results=30"
+    tags: [paper, arxiv, research, global]
+    include_keywords: [agent, llm, language model, multimodal, diffusion, vision, reasoning, robot, benchmark, alignment]
+    max_items: 10
+
+  - id: techcrunch_ai
+    name: TechCrunch AI
+    type: rss
+    enabled: true
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    tags: [media, global, ai]
+    include_keywords: [AI, OpenAI, Anthropic, Google, Microsoft, Nvidia, model, agent, startup, funding, robot]
+    max_items: 10
+
+  # Search and broad-topic sources. Query is filled from the active collection keywords.
+  - id: bing_news_search
+    name: Bing News Search
+    type: web
+    enabled: true
+    url: "https://www.bing.com/news/search?q={query_plus}&qft=interval%3d%227%22&form=YFNR"
+    item_selector: "a.title, a[href*='/news/'], a[href^='http']"
+    title_selector: "meta[property='og:title'], h1"
+    summary_selector: "meta[name='description'], meta[property='og:description']"
+    image_selector: "meta[property='og:image']"
+    tags: [search, general, media, hot, game, tech]
+    require_published_at: false
+    keyword_scope: title
+    max_items: 12
+
+  - id: baidu_news_search
+    name: Baidu Search
+    type: web
+    enabled: true
+    url: "https://www.baidu.com/s?wd={query_plus}&tn=news"
+    item_selector: "a[href^='http']"
+    title_selector: "meta[property='og:title'], title, h1"
+    summary_selector: "meta[name='description']"
+    image_selector: "meta[property='og:image']"
+    tags: [search, general, media, hot, game, tech]
+    require_published_at: false
+    keyword_scope: title
+    max_items: 8
+
+  - id: ign_feed
+    name: IGN
+    type: rss
+    enabled: true
+    url: https://feeds.ign.com/ign/games-all
+    tags: [game, gaming, media, global]
+    max_items: 10
+
+  - id: gamespot_feed
+    name: GameSpot
+    type: rss
+    enabled: true
+    url: https://www.gamespot.com/feeds/mashup/
+    tags: [game, gaming, media, global]
+    max_items: 10
+
+  - id: polygon_feed
+    name: Polygon
+    type: rss
+    enabled: true
+    url: https://www.polygon.com/rss/index.xml
+    tags: [game, gaming, media, global]
+    max_items: 10
+
+  - id: pcgamer_feed
+    name: PC Gamer
+    type: rss
+    enabled: true
+    url: https://www.pcgamer.com/rss/
+    tags: [game, gaming, media, global, pc]
+    max_items: 10
+
+  - id: eurogamer_feed
+    name: Eurogamer
+    type: rss
+    enabled: true
+    url: https://www.eurogamer.net/feed
+    tags: [game, gaming, media, global]
+    max_items: 10
+
+  - id: rockpapershotgun_feed
+    name: Rock Paper Shotgun
+    type: rss
+    enabled: true
+    url: https://www.rockpapershotgun.com/feed
+    tags: [game, gaming, media, global, pc]
+    max_items: 10
+
+  - id: gematsu_feed
+    name: Gematsu
+    type: rss
+    enabled: true
+    url: https://www.gematsu.com/feed
+    tags: [game, gaming, media, global, japan]
+    max_items: 10
+
+  # General and social hot-topic news sources.
+  - id: bbc_world_feed
+    name: BBC World News
+    type: rss
+    enabled: true
+    url: https://feeds.bbci.co.uk/news/world/rss.xml
+    tags: [hot, news, general, media, global]
+    max_items: 12
+
+  - id: npr_news_feed
+    name: NPR News
+    type: rss
+    enabled: true
+    url: https://feeds.npr.org/1001/rss.xml
+    tags: [hot, news, general, media, global]
+    max_items: 12
+
+  - id: ap_top_news_feed
+    name: AP Top News
+    type: rss
+    enabled: true
+    url: https://feeds.apnews.com/rss/apf-topnews
+    tags: [hot, news, general, media, global]
+    max_items: 12
+
+  - id: dw_world_feed
+    name: DW World
+    type: rss
+    enabled: true
+    url: https://rss.dw.com/rdf/rss-en-world
+    tags: [hot, news, general, media, global]
+    max_items: 12
+
+  # China official sources
+  - id: zhipu_news
+    name: Zhipu AI News
+    type: web
+    enabled: true
+    url: https://www.zhipuai.cn/zh/news
+    item_selector: "a[href^='/zh/news/']"
+    title_selector: "h1"
+    summary_selector: "meta[name='description']"
+    image_selector: "main img, img"
+    tags: [zhipu, official, china]
+    max_items: 12
+
+  - id: kimi_blog
+    name: Moonshot Kimi Blog
+    type: web
+    enabled: true
+    url: https://platform.kimi.ai/blog
+    item_selector: "article a[href^='/blog/posts/']"
+    title_selector: "meta[property='og:title'], h1"
+    summary_selector: "meta[name='description']"
+    image_selector: "meta[property='og:image']"
+    tags: [kimi, moonshot, official, china]
+    max_items: 12
+
+  - id: deepseek_updates
+    name: DeepSeek Updates
+    type: changelog
+    enabled: true
+    url: https://api-docs.deepseek.com/updates
+    item_selector: "h2, h3"
+    fallback_image: https://api-docs.deepseek.com/img/deepseek-social-card.jpeg
+    tags: [deepseek, official, china]
+    max_items: 12
+
+  # China AI media and tech news sources with timestamps
+  - id: qbitai_feed
+    name: QbitAI
+    type: rss
+    enabled: true
+    url: https://www.qbitai.com/feed
+    tags: [media, china, ai]
+    include_keywords:
+      - AI
+      - 大模型
+      - 模型
+      - 智能体
+      - Agent
+      - 机器人
+      - DeepSeek
+      - 智谱
+      - Kimi
+      - 腾讯
+      - 字节
+      - 阿里
+      - 百度
+      - OpenAI
+      - Anthropic
+      - Google
+      - NVIDIA
+      - 华为
+      - 昇腾
+      - 盘古
+      - 鸿蒙
+      - HarmonyOS
+      - 芯片
+      - 算力
+      - 智能汽车
+      - 自动驾驶
+    keyword_scope: title
+    max_items: 18
+
+  - id: ithome_feed
+    name: IT Home
+    type: rss
+    enabled: true
+    url: https://www.ithome.com/rss/
+    tags: [media, china, tech]
+    include_keywords:
+      - AI
+      - 人工智能
+      - 大模型
+      - 模型
+      - 智能体
+      - 机器人
+      - DeepSeek
+      - 智谱
+      - Kimi
+      - 腾讯
+      - 字节
+      - 豆包
+      - 阿里
+      - 通义
+      - 百度
+      - 文心
+      - OpenAI
+      - Anthropic
+      - Google
+      - NVIDIA
+      - 华为
+      - 昇腾
+      - 盘古
+      - 鸿蒙
+      - HarmonyOS
+      - 芯片
+      - 算力
+      - 智能汽车
+      - 自动驾驶
+    keyword_scope: title
+    max_items: 22
+
+  - id: infoq_feed
+    name: InfoQ China
+    type: rss
+    enabled: true
+    url: https://www.infoq.cn/feed
+    tags: [media, china, developer]
+    include_keywords:
+      - AI
+      - 人工智能
+      - 大模型
+      - 模型
+      - 智能体
+      - Agent
+      - OpenAI
+      - DeepSeek
+      - 腾讯
+      - 字节
+      - 阿里
+      - 百度
+      - RAG
+      - MCP
+      - LLM
+      - 华为
+      - 昇腾
+      - 盘古
+      - 鸿蒙
+      - HarmonyOS
+      - 芯片
+      - 算力
+      - 智能汽车
+      - 自动驾驶
+    keyword_scope: title
+    max_items: 18
+
+  - id: 36kr_feed
+    name: 36Kr
+    type: rss
+    enabled: true
+    url: https://www.36kr.com/feed
+    tags: [media, china, business]
+    include_keywords:
+      - AI
+      - 人工智能
+      - 大模型
+      - 模型
+      - 智能体
+      - Agent
+      - 机器人
+      - 具身
+      - 融资
+      - DeepSeek
+      - 智谱
+      - Kimi
+      - 腾讯
+      - 字节
+      - 阿里
+      - 百度
+      - 华为
+      - 昇腾
+      - 盘古
+      - 鸿蒙
+      - HarmonyOS
+      - 芯片
+      - 算力
+      - 智能汽车
+      - 自动驾驶
+    keyword_scope: title
+    max_items: 12
+
+  - id: leiphone_feed
+    name: Leiphone
+    type: rss
+    enabled: true
+    url: https://www.leiphone.com/feed
+    tags: [media, china, ai]
+    include_keywords:
+      - AI
+      - 人工智能
+      - 大模型
+      - 模型
+      - 智能体
+      - Agent
+      - 机器人
+      - 具身
+      - ICML
+      - CVPR
+      - 论文
+      - DeepSeek
+      - 智谱
+      - 腾讯
+      - 字节
+      - 阿里
+      - 百度
+      - 华为
+      - 昇腾
+      - 盘古
+      - 鸿蒙
+      - HarmonyOS
+      - 芯片
+      - 算力
+      - 智能汽车
+      - 自动驾驶
+    keyword_scope: title
+    max_items: 12
+
+  - id: cnblogs_news
+    name: Cnblogs News
+    type: rss
+    enabled: true
+    url: https://feed.cnblogs.com/news/rss
+    tags: [media, china, developer]
+    include_keywords:
+      - AI
+      - 人工智能
+      - 大模型
+      - 模型
+      - 智能体
+      - Agent
+      - DeepSeek
+      - 智谱
+      - Kimi
+      - 腾讯
+      - 字节
+      - 阿里
+      - 百度
+      - OpenAI
+      - Anthropic
+      - Google
+      - 华为
+      - 昇腾
+      - 盘古
+      - 鸿蒙
+      - HarmonyOS
+      - 芯片
+      - 算力
+      - 智能汽车
+      - 自动驾驶
+    keyword_scope: title
+    max_items: 10
+
+  # GitHub API source: new AI-related repositories with created_at timestamps.
+  - id: github_ai_recent
+    name: GitHub Recent AI Repos
+    type: json
+    enabled: true
+    url: "https://api.github.com/search/repositories?q=(ai%20OR%20llm%20OR%20agent%20OR%20rag)%20created:%3E={since_date}&sort=stars&order=desc&per_page=50"
+    list_path: items
+    title_path: full_name
+    link_path: html_url
+    summary_path: description
+    image_path: owner.avatar_url
+    published_path: created_at
+    tags: [github, open-source, global]
+    max_items: 12
+
+  # Sources below are useful but not enabled until we have stable timestamps
+  # from their static HTML or APIs.
+  - id: github_trending_python
+    name: GitHub Trending Python
+    type: web
+    enabled: false
+    url: https://github.com/trending/python?since=daily
+    item_selector: "article.Box-row h2 a"
+    tags: [github, open-source, trending]
+    require_published_at: false
+    max_items: 6

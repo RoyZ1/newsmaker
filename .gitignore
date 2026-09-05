@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.idea/
+.vscode/
+
+*.log
+*.zip
+
+.DS_Store
+Thumbs.db
+
+# --- secrets & local runtime (never push) ---
+.env
+.env.*
+data/secrets/
+*.key
+
+data/*
+!data/.gitkeep
+

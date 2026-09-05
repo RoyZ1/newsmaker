@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Newsmaker · 科技内容 AI 采编工作台 — 从信息源到公众号草稿箱的一条龙 Agent</title>
+<meta name="description" content="Newsmaker 是一个本地运行的科技内容 AI Agent：聚合 36+ 信息源，自动生成选题、撰写草稿、规划配图，并通过微信公众平台官方接口同步到草稿箱——AI 负责初稿，编辑负责把关。">
+<meta property="og:title" content="Newsmaker · 科技内容 AI 采编工作台">
+<meta property="og:description" content="从 36+ 科技信息源到公众号草稿箱的一条龙 AI 采编 Agent：采集 → 选题 → 写作 → 配图 → 官方同步，本地运行、人工把关。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%235266eb'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle' fill='%23fff' font-family='Georgia'%3EN%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#171721; --bg-deep:#12121a; --card:#1e1e2a; --card-2:#232330;
+    --btn:#272735; --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --txt:#ededf3; --muted:#a9adbb; --faint:#7a7e8d;
+    --accent:#5266eb; --accent-soft:rgba(82,102,235,.16);
+    --peach:#fbe2d2; --peach-ink:#5d2a1a;
+    --serif:"Georgia","Times New Roman","Songti SC","SimSun",serif;
+    --sans:"Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+    --mono:"JetBrains Mono","SFMono-Regular",Consolas,"Courier New",monospace;
+    --r:16px; --r-lg:24px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);line-height:1.7;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  ::selection{background:var(--accent);color:#fff}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+  section{position:relative}
+
+  /* ---------- nav ---------- */
+  .nav{position:sticky;top:0;z-index:50;background:rgba(23,23,33,.86);
+    backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  .nav-in{max-width:1140px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:18px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:.2px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;background:var(--accent);display:grid;place-items:center;
+    color:#fff;font-family:var(--serif);font-size:17px;font-weight:700}
+  .brand small{font-weight:400;color:var(--muted);font-size:12.5px;letter-spacing:.4px}
+  .nav-links{margin-left:auto;display:flex;align-items:center;gap:22px;font-size:14px;color:var(--muted)}
+  .nav-links a:hover{color:var(--txt)}
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:10px 20px;font-size:14px;
+    font-weight:600;border:1px solid transparent;cursor:pointer;transition:.18s;white-space:nowrap}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{filter:brightness(1.12);transform:translateY(-1px)}
+  .btn-ghost{border-color:var(--line-2);color:var(--txt)}
+  .btn-ghost:hover{border-color:var(--accent);color:#fff}
+  .btn-sm{padding:7px 14px;font-size:13px}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;padding:86px 0 30px;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:-200px -100px auto auto;width:640px;height:640px;
+    background:radial-gradient(circle,rgba(82,102,235,.20),transparent 62%);pointer-events:none}
+  .hero::after{content:"";position:absolute;left:-160px;bottom:-260px;width:560px;height:560px;
+    background:radial-gradient(circle,rgba(251,226,210,.07),transparent 60%);pointer-events:none}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-2);
+    border-radius:999px;padding:6px 14px;font-size:12.5px;color:var(--muted);letter-spacing:2px;background:var(--card)}
+  .eyebrow i{width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block}
+  .hero h1{font-family:var(--serif);font-weight:400;font-size:clamp(34px,5vw,62px);
+    line-height:1.18;letter-spacing:-1px;margin:26px 0 6px}
+  .hero h1 em{font-style:italic;color:var(--accent)}
+  .hero .sub{color:var(--muted);font-size:clamp(15px,1.6vw,18px);max-width:640px;margin-top:14px}
+  .hero-actions{display:flex;gap:14px;flex-wrap:wrap;margin:34px 0 12px}
+  .hero-note{color:var(--faint);font-size:12.5px;margin-top:8px}
+  .hero-note a{color:var(--muted);border-bottom:1px dashed var(--line-2)}
+
+  /* hero screenshot card */
+  .stage{margin-top:54px;position:relative}
+  .browser{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+    overflow:hidden;box-shadow:0 40px 90px -30px rgba(0,0,0,.75)}
+  .browser-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .browser-bar i{width:11px;height:11px;border-radius:50%}
+  .browser-bar i:nth-child(1){background:#ff5f57}.browser-bar i:nth-child(2){background:#febc2e}.browser-bar i:nth-child(3){background:#28c840}
+  .browser-url{margin-left:12px;flex:1;max-width:420px;background:var(--bg);border-radius:7px;
+    font-size:12px;color:var(--faint);font-family:var(--mono);padding:6px 14px}
+  .browser img{display:block;width:100%;height:auto}
+  .float-chips{position:absolute;left:24px;bottom:-26px;display:flex;gap:12px;flex-wrap:wrap}
+  .chip{background:var(--bg-deep);border:1px solid var(--line-2);border-radius:14px;padding:12px 18px;
+    box-shadow:0 18px 40px -18px rgba(0,0,0,.8)}
+  .chip b{display:block;font-size:22px;font-family:var(--serif);font-weight:400;color:#fff}
+  .chip span{font-size:12px;color:var(--muted)}
+
+  /* ---------- generic ---------- */
+  .sec{padding:96px 0 40px}
+  .sec-head{max-width:720px;margin-bottom:44px}
+  .kicker{color:var(--accent);font-size:12.5px;letter-spacing:3px;font-weight:700}
+  .sec-head h2{font-family:var(--serif);font-weight:400;font-size:clamp(26px,3.2vw,40px);line-height:1.25;margin:12px 0 14px}
+  .sec-head p{color:var(--muted);font-size:15.5px}
+
+  .grid{display:grid;gap:16px}
+  .g-2{grid-template-columns:repeat(2,1fr)}
+  .g-3{grid-template-columns:repeat(3,1fr)}
+  .g-4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:920px){.g-3,.g-4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:600px){.g-2,.g-3,.g-4{grid-template-columns:1fr}}
+
+  /* ---------- features ---------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:26px;
+    transition:.2s;position:relative;overflow:hidden}
+  .card:hover{transform:translateY(-3px);border-color:var(--line-2);background:var(--card-2)}
+  .card .ico{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;font-size:21px;
+    background:var(--accent-soft);color:#9db0ff;margin-bottom:16px}
+  .card h3{font-size:17.5px;font-weight:650;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:13.8px}
+  .card .tag{display:inline-block;margin-top:14px;font-size:11.5px;color:var(--accent);
+    border:1px solid rgba(82,102,235,.35);border-radius:999px;padding:3px 10px;background:var(--accent-soft)}
+
+  /* ---------- workflow timeline ---------- */
+  .flow{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-top:10px}
+  @media(max-width:1020px){.flow{grid-template-columns:repeat(4,1fr)}}
+  @media(max-width:620px){.flow{grid-template-columns:repeat(2,1fr)}}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 14px;position:relative;min-height:118px}
+  .step .n{font-family:var(--serif);font-style:italic;font-size:30px;color:var(--accent);line-height:1}
+  .step h4{font-size:14.5px;margin:10px 0 6px}
+  .step p{font-size:12px;color:var(--faint)}
+  .step::after{content:"→";position:absolute;right:-14px;top:22px;color:var(--faint);font-size:15px}
+  .step:last-child::after{content:""}
+
+  /* ---------- screenshots gallery ---------- */
+  .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+  @media(max-width:820px){.gallery{grid-template-columns:1fr}}
+  .shot{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
+    cursor:zoom-in;transition:.22s;display:block}
+  .shot:hover{transform:translateY(-4px);border-color:var(--accent)}
+  .shot img{width:100%;height:auto;display:block;border-bottom:1px solid var(--line)}
+  .shot .cap{padding:14px 18px}
+  .shot .cap b{font-size:14.5px;display:block}
+  .shot .cap span{font-size:12.5px;color:var(--muted)}
+  .shot.featured{grid-column:span 2}
+  @media(max-width:820px){.shot.featured{grid-column:span 1}}
+
+  /* ---------- lightbox ---------- */
+  .lb{position:fixed;inset:0;background:rgba(8,8,12,.92);z-index:100;display:none;
+    align-items:center;justify-content:center;padding:4vh 4vw;cursor:zoom-out}
+  .lb.on{display:flex}
+  .lb img{max-width:100%;max-height:92vh;border-radius:14px;box-shadow:0 30px 90px rgba(0,0,0,.8)}
+
+  /* ---------- architecture ---------- */
+  .pipe{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;justify-content:center}
+  .node{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:150px;flex:1 1 150px}
+  .node b{display:block;font-size:14.5px;margin-bottom:4px}
+  .node small{color:var(--muted);font-size:12px;display:block}
+  .node.hl{border-color:rgba(82,102,235,.6);background:linear-gradient(160deg,var(--accent-soft),var(--card) 65%)}
+  .arrow{display:flex;align-items:center;color:var(--faint);font-size:16px}
+  .legend{margin-top:22px;color:var(--faint);font-size:13px}
+
+  /* ---------- tech ---------- */
+  .tech{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .tech span{border:1px solid var(--line-2);border-radius:999px;padding:7px 15px;font-size:13px;background:var(--card);color:#dfe2ea}
+  .two{display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:start}
+  @media(max-width:860px){.two{grid-template-columns:1fr}}
+
+  /* ---------- code ---------- */
+  pre{background:#101018;border:1px solid var(--line);border-radius:var(--r);padding:22px 24px;
+    overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.8;color:#d8dbe6}
+  pre .c{color:#6f7488}pre .k{color:#9db0ff}pre .s{color:#a8e6c1}
+
+  .steps{display:flex;flex-direction:column;gap:14px;margin-top:22px}
+  .steps li{list-style:none;display:flex;gap:14px}
+  .steps .ix{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent-soft);color:#b9c6ff;
+    display:grid;place-items:center;font-weight:700;font-size:14px;margin-top:2px}
+  .steps p{font-size:14px;color:var(--muted)} .steps b{color:var(--txt);font-weight:600}
+  code.inline{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;
+    font-family:var(--mono);font-size:12.5px;color:#c9d4ff}
+
+  /* ---------- compliance / notes ---------- */
+  .note-card{background:linear-gradient(135deg,rgba(82,102,235,.12),transparent 55%),var(--card);
+    border:1px solid rgba(82,102,235,.4);border-radius:var(--r-lg);padding:30px}
+  .note-card h3{font-family:var(--serif);font-weight:400;font-size:24px;margin-bottom:16px}
+  .note-card ul{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 26px;font-size:14px;color:#dfe2ea}
+  @media(max-width:700px){.note-card ul{grid-template-columns:1fr}}
+  .note-card li{list-style:none;padding-left:26px;position:relative}
+  .note-card li::before{content:"✓";position:absolute;left:0;color:#4ade80}
+
+  /* ---------- footer ---------- */
+  .foot{border-top:1px solid var(--line);margin-top:110px;padding:40px 0 54px;color:var(--faint);font-size:13px}
+  .foot-in{max-width:1140px;margin:0 auto;padding:0 24px;display:flex;gap:26px;flex-wrap:wrap;align-items:center}
+  .foot a{color:var(--muted)}
+  .foot .right{margin-left:auto;text-align:right}
+  @media(max-width:700px){.foot .right{margin-left:0;text-align:left}}
+
+  /* reveal */
+  .rv{opacity:0;transform:translateY(18px);transition:.7s cubic-bezier(.2,.6,.2,1)}
+  .rv.on{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top"><span class="logo">N</span>Newsmaker<small>科技内容 AI 采编工作台</small></a>
+    <div class="nav-links">
+      <a href="#features">特性</a>
+      <a href="#flow">工作流</a>
+      <a href="#shots">界面</a>
+      <a href="#stack">技术栈</a>
+      <a href="#start">快速开始</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/RoyZ1/newsmaker" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="eyebrow"><i></i>本地运行 · AI Agent · 微信公众号</span>
+    <h1>把「科技新闻」，变成一篇<br>能直接进<em>公众号草稿箱</em>的稿子。</h1>
+    <p class="sub">Newsmaker 聚合 36+ 国内外科技与游戏信息源，自动完成<b style="color:#fff">采集 → 选题 → 写作 → 配图 → 平台同步</b>五道工序——大模型负责初稿与配图，编辑器保持对每一行字的最终控制权。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#start">五分钟跑起来 →</a>
+      <a class="btn btn-ghost" href="#shots">先看真实界面</a>
+      <a class="btn btn-ghost" href="https://github.com/RoyZ1/newsmaker/stargazers" target="_blank" rel="noopener">☆ Star 仓库</a>
+    </div>
+    <p class="hero-note">开源于 <a href="https://github.com/RoyZ1/newsmaker" target="_blank" rel="noopener">github.com/RoyZ1/newsmaker</a> · 数据与密钥全部留在本机，不上传任何第三方云服务。</p>
+
+    <div class="stage">
+      <div class="browser">
+        <div class="browser-bar"><i></i><i></i><i></i><span class="browser-url">http://127.0.0.1:8000 — 科技内容 Agent 工作台</span></div>
+        <img src="screenshots/shot-collect-top.png" alt="Newsmaker 工作台-采集新闻页真实界面">
+      </div>
+      <div class="float-chips">
+        <div class="chip"><b>36+</b><span>已启用信息源</span></div>
+        <div class="chip"><b>4 类</b><span>RSS / Web / JSON / Changelog</span></div>
+        <div class="chip"><b>7 步</b><span>一体化工作流</span></div>
+        <div class="chip"><b>3 平台</b><span>公众号 · 小黑盒 · 抖音舆论</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ PAIN / SOLUTION ============ -->
+<section class="sec">
+  <div class="wrap two" style="align-items:center">
+    <div>
+      <span class="kicker">WHY NEWSMARKER</span>
+      <h2 style="font-family:var(--serif);font-weight:400;font-size:clamp(25px,3vw,36px);line-height:1.3;margin:12px 0 16px">公众号日更的痛，不是「没得写」，<br>而是「写得慢、配图烦、发得乱」。</h2>
+      <p style="color:var(--muted);font-size:15px">刷 40 个站点攒素材、开文档拟大纲、让大模型写稿再手动排版、找封面图、去后台粘贴——这一套动作每天重复三遍。Newsmaker 把这些动作收进<b style="color:#fff">一个本地工作台</b>：</p>
+      <ul class="steps" style="margin-top:22px">
+        <li><span class="ix">1</span><p><b>攒素材不靠人肉</b>——RSS / 网页 / JSON / Changelog 四类源统一接入，72 小时窗口自动抓取，按「官方源 + 实体热度 + 时效性」规则打分排序，非官方媒体图只作预览、绝不进发布位。</p></li>
+        <li><span class="ix">2</span><p><b>AI 只做初稿，人做终审</b>——选题可改、草稿可改、标题可换、图片可换，每次改动自动留版本快照；生成的每一段素材都带来源与评分证据。</p></li>
+        <li><span class="ix">3</span><p><b>发布不靠复制粘贴</b>——微信走<b>官方草稿箱接口</b>一键同步；小黑盒走富文本复制 + 半自动浏览器导入，停在人工审核位，系统永不自动点发布。</p></li>
+      </ul>
+    </div>
+    <div class="gallery" style="grid-template-columns:1fr;gap:18px">
+      <figure class="shot" onclick="openLb('screenshots/shot-drafts.png','草稿与配图：图文槽位 + 多文体 + 平台导出')">
+        <img src="screenshots/shot-drafts.png" alt="草稿与配图页面">
+        <figcaption class="cap"><b>草稿与配图</b><span>点击查看大图 · 长文 / 短文 / 小黑盒三种文体与图文槽位</span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="sec" id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">CAPABILITIES</span>
+      <h2>不是又一个「AI 写文章」玩具<br>而是一整套编辑部流水线</h2>
+      <p>每个能力都考虑到了真实发布场景里的「返工」：生成结果全部可校验、可编辑、可回滚。</p>
+    </div>
+    <div class="grid g-3">
+      <div class="card"><div class="ico">📡</div><h3>多源情报雷达</h3><p>OpenAI、Anthropic、DeepMind、华为、智谱、DeepSeek 等官方源 + 国内外科技媒体 + arXiv + GitHub 热榜，共 36+ 信息源统一接入；中文媒体按「标题命中」防正文误伤。</p><span class="tag">RSS / Web / JSON</span></div>
+      <div class="card"><div class="ico">🧭</div><h3>选题生成引擎</h3><p>对当天素材按实体聚类，产出带「标题 / 角度 / 结构 / 事实清单 / 避雷措辞」的选题卡，再由大模型按编辑规则打磨；支持人工增删改与 GitHub 项目独立位。</p><span class="tag">选题聚类</span></div>
+      <div class="card"><div class="ico">✍️</div><h3>带质检的写作</h3><p>长文（公众号深度稿）、短文、小黑盒版三种文体；标题可批量改写选最优。输出按 JSON Schema 校验——不合格会自动带着问题清单「修复重试」，而不是硬塞一篇烂稿。</p><span class="tag">LLM + 规则双校验</span></div>
+      <div class="card"><div class="ico">🖼️</div><h3>图文一体化</h3><p>按草稿章节自动规划「图片槽位」，候选图 = 官方源原图 + AI 生成图 + 官方页面截图 + 人工上传；每张图经过清晰度 / 色彩 / 水印 / 重复审核后才能入选发布位。</p><span class="tag">官方图优先</span></div>
+      <div class="card"><div class="ico">💬</div><h3>舆论素材与评论卡</h3><p>通过抖音开放平台授权接口采集公开视频评论，自动排版成「评论卡片」图片；LLM 提炼舆论分析，一键回填草稿生成「舆论与争议」章节。</p><span class="tag">Douyin OpenAPI</span></div>
+      <div class="card"><div class="ico">🚀</div><h3>直达草稿箱的发布</h3><p>微信：图片压缩上传 → 缩略图素材 → <code class="inline">draft/add</code> 官方草稿箱接口，一行不落。小黑盒：富文本复制 / HTML / Markdown / PNG 导出 + Playwright 半自动导入。</p><span class="tag">官方接口 · 不绕登录</span></div>
+      <div class="card"><div class="ico">🗂️</div><h3>全链路留痕</h3><p>采集、选题、草稿、配图、发布全部备案：JSON 实时数据 + SQLite 结构化同步 + 每日归档 + 草稿版本快照 + 发布指纹防重复。</p><span class="tag">数据可回溯</span></div>
+      <div class="card"><div class="ico">🔒</div><h3>本地优先，密钥不出门</h3><p>一切在 <code class="inline">127.0.0.1</code> 运行；LLM / 图模型 / 微信 AppSecret 全部走 OpenAI 兼容协议或官方 API，密钥只在本机 <code class="inline">.env</code>，系统从不打印密钥。</p><span class="tag">隐私友好</span></div>
+      <div class="card"><div class="ico">🔧</div><h3>模型与提示词皆可换</h3><p>任何 OpenAI 兼容大模型（DeepSeek / GLM / 通义 / GPT…）一行换掉；选题、写作、标题、配图提示词都是可编辑的 JSON / Markdown 文件，随时调教你的文风。</p><span class="tag">Prompt 即配置</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WORKFLOW ============ -->
+<section class="sec" id="flow">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">WORKFLOW</span>
+      <h2>工作台里的一条七步流水线</h2>
+      <p>单页工作台按步骤推进，每步做完都提示你下一步该干什么——状态永远可见。</p>
+    </div>
+    <div class="flow">
+      <div class="step"><div class="n">01</div><h4>采集新闻</h4><p>36+ 源 × 关键词包 × 搜索通道，72h 窗口，规则打分 Top50</p></div>
+      <div class="step"><div class="n">02</div><h4>生成选题</h4><p>聚类 + LLM 打磨，人工可改可删，最多保留一组今日选题</p></div>
+      <div class="step"><div class="n">03</div><h4>草稿与配图</h4><p>三文体草稿，图文槽位逐张审核、写图注、换候选</p></div>
+      <div class="step"><div class="n">04</div><h4>标题与排版</h4><p>标题多稿改写 + 平台格式预览 + 公众号 HTML 排版</p></div>
+      <div class="step"><div class="n">05</div><h4>舆论素材</h4><p>评论采集 → 评论卡片 → 自动生成舆论章节（可选）</p></div>
+      <div class="step"><div class="n">06</div><h4>导出与同步</h4><p>微信官方草稿箱同步 / 小黑盒复制与半自动导入</p></div>
+      <div class="step"><div class="n">07</div><h4>发布备案</h4><p>打标「已发布」，指纹防重，SQLite 备案留档</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREENSHOTS ============ -->
+<section class="sec" id="shots">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">LIVE SCREENSHOTS</span>
+      <h2>真实界面，不是效果图</h2>
+      <p>以下全部来自本地实际运行的截图（暗色「墨丘利」主题）。点击任意一张可放大细看。</p>
+    </div>
+    <div class="gallery">
+      <figure class="shot" onclick="openLb('screenshots/shot-collect.png','采集新闻：关键词 / 来源包 / 搜索通道与评分列表')">
+        <img src="screenshots/shot-collect.png" alt="采集新闻页面">
+        <figcaption class="cap"><b>① 采集新闻</b><span>关键词配置、来源包勾选与带评分理由的新闻列表</span></figcaption>
+      </figure>
+      <figure class="shot" onclick="openLb('screenshots/shot-topics.png','选题：今日候选选题卡与素材依据')">
+        <img src="screenshots/shot-topics.png" alt="选题页面">
+        <figcaption class="cap"><b>② 生成选题</b><span>选题卡含标题、角度、结构与引用素材，支持人工编辑</span></figcaption>
+      </figure>
+      <figure class="shot" onclick="openLb('screenshots/shot-drafts.png','草稿与配图：多文体草稿编辑与图文槽位')">
+        <img src="screenshots/shot-drafts.png" alt="草稿与配图页面">
+        <figcaption class="cap"><b>③ 草稿与配图</b><span>长文 / 短文 / 小黑盒文体切换，槽位图逐张审核</span></figcaption>
+      </figure>
+      <figure class="shot" onclick="openLb('screenshots/shot-records.png','发布记录：发布备案 / 数据库状态 / 平台同步记录')">
+        <img src="screenshots/shot-records.png" alt="发布记录页面">
+        <figcaption class="cap"><b>④ 发布记录</b><span>发布备案、SQLite 同步与小黑盒同步记录一目了然</span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section class="sec" id="stack">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">ARCHITECTURE</span>
+      <h2>一条数据流，六层各司其职</h2>
+    </div>
+    <div class="pipe">
+      <div class="node"><b>信息源</b><small>36+ RSS/Web/JSON<br>关键词包 · 官方源优先</small></div><div class="arrow">→</div>
+      <div class="node"><b>采集与评分</b><small>feedparser · BeautifulSoup<br>httpx · 规则打分引擎</small></div><div class="arrow">→</div>
+      <div class="node hl"><b>AI 创作层</b><small>选题聚类 · 多文体写作<br>标题改写 · 质检重试<br>OpenAI 兼容 LLM</small></div><div class="arrow">→</div>
+      <div class="node"><b>配图系统</b><small>官方原图 · 文生图(万相)<br>官方截图 · 审核流水线</small></div><div class="arrow">→</div>
+      <div class="node"><b>平台适配</b><small>公众号 HTML/JSON<br>小黑盒富文本 · 抖音评论</small></div><div class="arrow">→</div>
+      <div class="node"><b>同步与备案</b><small>微信 draft/add · 半自动导入<br>SQLite · 版本快照 · 发布记录</small></div>
+    </div>
+    <p class="legend">数据流：采集素材(JSON+图片) → 选题 → 草稿 → 配图槽位 → 平台导出 → 草稿箱/发布记录。全部由 Python 3.12 单进程承载，Flask 提供界面与 API，Playwright 负责可见浏览器自动化。</p>
+  </div>
+</section>
+
+<!-- ============ TECH STACK ============ -->
+<section class="sec">
+  <div class="wrap two">
+    <div>
+      <span class="kicker">TECH STACK</span>
+      <h2 style="font-family:var(--serif);font-weight:400;font-size:30px;margin:12px 0 6px">技术栈</h2>
+      <p style="color:var(--muted);font-size:14.5px;margin-bottom:18px">克制的老实组合：一个脚本语言生态、一个 Web 微框架、一个原生 JS 工作台、四个外部协议。任何一层都能看懂、能替换。</p>
+      <div class="tech">
+        <span>Python 3.12</span><span>Flask 3</span><span>Jinja2</span><span>原生 JS 单页工作台</span>
+        <span>httpx</span><span>feedparser</span><span>BeautifulSoup4</span><span>PyYAML</span>
+        <span>Pillow</span><span>Playwright</span><span>SQLite</span><span>JSON 数据层</span>
+        <span>OpenAI 兼容 LLM API</span><span>阿里云 DashScope 文生图</span><span>微信公众平台 API</span><span>抖音开放平台</span>
+      </div>
+    </div>
+    <div>
+      <div class="note-card">
+        <h3>设计与工程上的三个坚持</h3>
+        <ul>
+          <li><b>官方接口优先</b>：微信走 draft/add 草稿箱接口，抖音走开放平台授权，小黑盒无公开接口就停在人工审核，不做模拟登录与逆向。</li>
+          <li><b>AI 永远不是最后签名的人</b>：所有生成内容可编辑、可回滚、留版本快照；配图带审核证据，选题带事实清单。</li>
+          <li><b>本地即云端</b>：单机可跑、密钥不出门、数据全备案，方便你随时备份或迁移到自己的服务器。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ QUICKSTART ============ -->
+<section class="sec" id="start">
+  <div class="wrap two">
+    <div>
+      <span class="kicker">QUICKSTART</span>
+      <h2 style="font-family:var(--serif);font-weight:400;font-size:clamp(25px,3vw,34px);line-height:1.3;margin:12px 0 6px">五分钟，把编辑部开到本机</h2>
+      <p style="color:var(--muted);font-size:14.5px">需要：Python 3.12+、一个任意厂商的 OpenAI 兼容大模型 Key（DeepSeek / GLM / 通义等均可）。微信同步需服务号 / 订阅号 AppID 与 AppSecret。</p>
+      <ol class="steps">
+        <li><span class="ix">1</span><p><b>克隆并安装依赖</b><br><code class="inline">git clone https://github.com/RoyZ1/newsmaker.git && cd newsmaker && pip install -r requirements.txt</code></p></li>
+        <li><span class="ix">2</span><p><b>配置密钥</b>——把 <code class="inline">LLM_API_KEY / LLM_MODEL_ID / LLM_BASE_URL</code> 填进 <code class="inline">.env</code>（可选的微信 / 图模型 / 抖音 Key 见 docs）。</p></li>
+        <li><span class="ix">3</span><p><b>跑起来</b>——<code class="inline">python run_server.py</code>，打开 <code class="inline">http://127.0.0.1:5050</code>（端口默认 5050，可在 .env 的 APP_PORT 调整）。</p></li>
+        <li><span class="ix">4</span><p><b>点一下「开始采集」</b>——等评分列表刷新，即可进入选题与写作。想调整信息源就编辑 <code class="inline">config/sources.yml</code>。</p></li>
+        <li><span class="ix">5</span><p><b>（可选）小黑盒半自动导入</b>——<code class="inline">python -m playwright install chromium</code> 后即可在草稿卡片使用。</p></li>
+      </ol>
+    </div>
+    <div>
+      <pre><span class="c"># config/sources.yml —— 新增一个信息源只需十行</span>
+- id: qbitai_feed
+  name: QbitAI
+  type: rss
+  enabled: true
+  url: https://www.qbitai.com/feed
+  tags: [media, china, ai]
+  include_keywords: [AI, 大模型, 智能体, DeepSeek]
+  keyword_scope: title   <span class="c"># 中文媒体：只按标题过滤</span>
+  max_items: 10</pre>
+      <pre style="margin-top:14px"><span class="c"># 写作提示词也是配置文件，随你调教文风</span>
+config/prompts/article_writer.json   <span class="c"># 长文草稿</span>
+config/prompts/title_writer.json     <span class="c"># 标题改写</span>
+config/prompts/humanizer_zh.md       <span class="c"># 中文「人味化」规则</span>
+config/prompts/cover_image_prompt.json <span class="c"># 配图提示词</span></pre>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
+        <a class="btn btn-primary" href="https://github.com/RoyZ1/newsmaker" target="_blank" rel="noopener">GitHub 仓库 →</a>
+        <a class="btn btn-ghost" href="usage.md">完整使用手册</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="foot">
+  <div class="foot-in">
+    <a class="brand" href="#top"><span class="logo">N</span>Newsmaker</a>
+    <span>本地运行的微信公众号科技内容 AI 采编 Agent · 开源项目</span>
+    <div class="right">
+      <a href="https://github.com/RoyZ1/newsmaker/issues" target="_blank" rel="noopener">提交 Issue</a> ·
+      <a href="https://github.com/RoyZ1/newsmaker/stargazers" target="_blank" rel="noopener">Star 支持</a><br>
+      <span style="color:var(--faint)">截图 / 数据为本地运行产物 · 本页为项目宣传页（docs/index.html）</span>
+    </div>
+  </div>
+</footer>
+
+<!-- lightbox -->
+<div class="lb" id="lb" onclick="this.classList.remove('on')">
+  <img id="lbImg" src="" alt="放大预览">
+</div>
+
+<script>
+  // lightbox
+  function openLb(src, alt){
+    document.getElementById('lbImg').src = src;
+    document.getElementById('lbImg').alt = alt || '';
+    document.getElementById('lb').classList.add('on');
+  }
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') document.getElementById('lb').classList.remove('on'); });
+
+  // reveal on scroll (graceful fallback when IO/JS unavailable)
+  const hasIO = 'IntersectionObserver' in window;
+  const targets = document.querySelectorAll('.sec, .stage');
+  if (hasIO) {
+    document.querySelectorAll('.sec').forEach(el => el.classList.add('rv'));
+    const io = new IntersectionObserver(es => es.forEach(x => { if (x.isIntersecting) { x.target.classList.add('on'); io.unobserve(x.target); } }), { threshold: .12 });
+    targets.forEach(el => io.observe(el));
+  } else {
+    targets.forEach(el => el.classList.add('on'));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+"""AI news collector package."""

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>原创文章草稿</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Original Drafts</p>
+        <h1>原创文章草稿</h1>
+      </div>
+      <div class="actions">
+        <a class="link-button" href="/">采集列表</a>
+        <a class="link-button" href="/topics">选题素材</a>
+        <button id="generateButton" class="primary-button" type="button">生成草稿</button>
+        <button id="coverButton" class="secondary-button" type="button">生成封面图</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="status-grid" aria-label="草稿状态">
+        <div>
+          <span>{{ drafts|length }}</span>
+          <p>文章草稿</p>
+        </div>
+        <div>
+          <span>LLM</span>
+          <p>原创写作</p>
+        </div>
+        <div>
+          <span>待审核</span>
+          <p>人工发布前检查</p>
+        </div>
+      </section>
+
+      <section class="topic-list">
+        {% if drafts %}
+          {% for draft in drafts %}
+            {% set display_title = (title_prefix.bracketed ~ draft.title) if title_prefix is defined and title_prefix.enabled else draft.title %}
+            <article class="topic-card">
+              <div class="topic-head">
+                <div>
+                  <p class="eyebrow">{{ draft.created_at[:16].replace("T", " ") }}</p>
+                  <h2>{{ display_title }}</h2>
+                </div>
+              </div>
+              {% if draft.subtitle %}
+                <p class="angle">{{ draft.subtitle }}</p>
+              {% endif %}
+
+              <section class="image-plan">
+                <h3>配图计划</h3>
+                {% if draft.cover_image %}
+                  <div class="image-plan-row">
+                    <strong>生成封面图</strong>
+                    <img class="draft-image" src="{{ draft.cover_image.url }}" alt="">
+                    {% if draft.cover_image.visual_angle %}
+                      <p>{{ draft.cover_image.visual_angle }}</p>
+                    {% endif %}
+                    <code>{{ draft.cover_image.prompt }}</code>
+                    <code>{{ draft.cover_image.local_path }}</code>
+                  </div>
+                {% endif %}
+
+                {% if draft.image_plan %}
+                  {% for image in draft.image_plan %}
+                    {% if not (image.type == "generated_cover" and image.position == "article_cover") %}
+                      <div class="image-plan-row">
+                        <strong>{{ image.position }} / {{ image.type }}</strong>
+                        {% if image.generated_url %}
+                          <img class="draft-image" src="{{ image.generated_url }}" alt="">
+                        {% elif image.prompt_or_url.startswith("/") %}
+                          <img class="draft-image" src="{{ image.prompt_or_url }}" alt="">
+                        {% elif image.prompt_or_url.startswith("http") %}
+                          <img class="draft-image" src="{{ image.prompt_or_url }}" alt="">
+                        {% else %}
+                          <div class="image-placeholder">需要生成原创封面</div>
+                        {% endif %}
+                        <p>{{ image.description }}</p>
+                        <code>{{ image.prompt_or_url }}</code>
+                        {% if image.generated_path %}
+                          <code>{{ image.generated_path }}</code>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                {% elif not draft.cover_image %}
+                  <div class="image-placeholder">还没有配图计划</div>
+                {% endif %}
+              </section>
+
+              <pre class="draft-body">{{ draft.body_markdown }}</pre>
+
+              <section class="guardrail">
+                <h3>原创检查</h3>
+                <ul>
+                  {% for item in draft.originality_checklist %}
+                    <li>{{ item }}</li>
+                  {% endfor %}
+                </ul>
+              </section>
+
+              <details>
+                <summary>来源链接</summary>
+                <div class="source-links">
+                  {% for item in draft.source_links %}
+                    <a href="{{ item.url }}" target="_blank" rel="noreferrer">
+                      {{ item.source_name }} / {{ item.published_at[:10] }} / {{ item.title }}
+                    </a>
+                  {% endfor %}
+                </div>
+              </details>
+            </article>
+          {% endfor %}
+        {% else %}
+          <div class="empty">
+            <h2>还没有文章草稿</h2>
+            <p>先生成选题素材，再点击“生成草稿”。草稿需要人工审核后再进入公众号发布流程。</p>
+          </div>
+        {% endif %}
+      </section>
+    </main>
+
+    <script>
+      const button = document.querySelector("#generateButton");
+      const coverButton = document.querySelector("#coverButton");
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "生成中...";
+        try {
+          const response = await fetch("/api/drafts/generate", { method: "POST" });
+          if (!response.ok) throw new Error("generate failed");
+          window.location.reload();
+        } catch (error) {
+          button.textContent = "生成失败";
+          setTimeout(() => {
+            button.textContent = "生成草稿";
+            button.disabled = false;
+          }, 1800);
+        }
+      });
+
+      coverButton.addEventListener("click", async () => {
+        coverButton.disabled = true;
+        coverButton.textContent = "生成中...";
+        try {
+          const response = await fetch("/api/drafts/generate-covers", { method: "POST" });
+          if (!response.ok) throw new Error("cover generation failed");
+          window.location.reload();
+        } catch (error) {
+          coverButton.textContent = "生成失败";
+          setTimeout(() => {
+            coverButton.textContent = "生成封面图";
+            coverButton.disabled = false;
+          }, 1800);
+        }
+      });
+    </script>
+  </body>
+</html>

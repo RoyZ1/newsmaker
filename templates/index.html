@@ -1,0 +1,2705 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>科技内容 Agent 工作台</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="app-shell-header">
+      <div>
+        <p class="eyebrow">WeChat Tech Agent</p>
+        <h1>科技内容 Agent 工作台</h1>
+      </div>
+      <div class="header-status">
+        <span>{{ status.next_step }}</span>
+        <time>{{ generated_at[:16].replace("T", " ") }}</time>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <details class="workflow-drawer">
+        <summary>
+          <span>当前功能</span>
+          <strong id="workflowDrawerLabel">采集新闻</strong>
+          <em>展开切换</em>
+        </summary>
+        <section class="workflow-steps" aria-label="工作流程">
+          <button class="step-tab is-active" type="button" data-panel="collect">
+            <strong>1</strong>
+            <span>采集新闻</span>
+            <em>{{ status.item_count }} 条</em>
+          </button>
+          <button class="step-tab" type="button" data-panel="topics">
+            <strong>2</strong>
+            <span>生成选题</span>
+            <em>{{ status.topic_count }} 个</em>
+          </button>
+          <button class="step-tab" type="button" data-panel="drafts">
+            <strong>3</strong>
+            <span>草稿与配图</span>
+            <em>{{ status.draft_count }} 篇</em>
+          </button>
+          <button class="step-tab" type="button" data-panel="sources">
+            <strong>4</strong>
+            <span>来源状态</span>
+            <em>{{ sources|selectattr("enabled")|list|length }} 个启用</em>
+          </button>
+          <button class="step-tab" type="button" data-panel="records">
+            <strong>5</strong>
+            <span>发布记录</span>
+            <em>{{ publication.count or 0 }} 篇</em>
+          </button>
+          <button class="step-tab" type="button" data-panel="opinions">
+            <strong>6</strong>
+            <span>舆论素材</span>
+            <em>{{ opinions|length }} 条</em>
+          </button>
+          <button class="step-tab" type="button" data-panel="changelog">
+            <strong>7</strong>
+            <span>更新日志</span>
+            <em>{{ changelog|length }} 条</em>
+          </button>
+        </section>
+      </details>
+
+      <div id="notice" class="notice" hidden></div>
+
+      <section id="collect" class="panel is-active">
+        <div class="panel-head">
+          <div>
+            <h2>采集新闻与图片</h2>
+            <p>按当前关键词、信息源和搜索通道抓取相关新闻。非官方媒体图只做预览，不作为发布图。</p>
+          </div>
+          <button id="collectButton" class="primary-button" type="button">开始采集</button>
+        </div>
+
+        <div class="collect-profile" id="collectProfile">
+          <div class="collect-profile-main">
+            <label for="collectKeywordInput">关键词</label>
+            <div class="keyword-editor" id="collectKeywordEditor" data-keywords="{{ collection_profile.current.keywords|tojson|forceescape }}">
+              <div class="keyword-input-row">
+                <input id="collectKeywordInput" type="text" placeholder="输入一个关键词">
+                <button id="collectKeywordAdd" class="mini-button" type="button">插入</button>
+              </div>
+              <div class="keyword-list" id="collectKeywordList" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="collect-profile-side">
+            <div class="preset-row">
+              {% for preset in collection_profile.presets %}
+                <button class="mini-button collect-preset" type="button" data-preset='{{ preset|tojson }}'>{{ preset.label }}</button>
+              {% endfor %}
+            </div>
+            <div class="check-row">
+              {% for package in collection_profile.source_packages %}
+                <label><input type="checkbox" name="sourcePackage" value="{{ package.key }}" {{ "checked" if package.key in collection_profile.current.source_packages else "" }}> {{ package.label }}</label>
+              {% endfor %}
+            </div>
+            <div class="check-row">
+              {% for engine in collection_profile.search_engines %}
+                <label><input type="checkbox" name="searchEngine" value="{{ engine.key }}" {{ "checked" if engine.key in collection_profile.current.search_engines else "" }}> {{ engine.label }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="metric-row">
+          <div>
+            <strong>{{ items|length }}</strong>
+            <span>当前新闻</span>
+          </div>
+          <div>
+            <strong>{{ settings.lookback_hours or 72 }}h</strong>
+            <span>时间窗口</span>
+          </div>
+          <div>
+            <strong>{{ category_counts|length }}</strong>
+            <span>内容分类</span>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <button class="filter-chip is-active" type="button" data-category="all">全部</button>
+          {% for category in category_counts %}
+            <button class="filter-chip" type="button" data-category="{{ category.key }}">
+              {{ category.label }} {{ category.count }}
+            </button>
+          {% endfor %}
+        </div>
+
+        <div class="feed">
+          {% if items %}
+            {% for item in items %}
+              {% set img = item.local_images[0] if item.local_images else item.images[0] if item.images else "" %}
+              <article class="news-card" data-category="{{ item.category }}" data-id="{{ item.id }}">
+                <div class="thumb">
+                  {% if img %}
+                    <img src="{{ img }}" alt="">
+                    <button class="icon-danger image-delete" type="button" data-item-id="{{ item.id }}" data-image="{{ img }}">删除图</button>
+                  {% else %}
+                    <div class="thumb-empty">{{ item.source_name[:2] }}</div>
+                  {% endif %}
+                </div>
+                <div class="content">
+                  <div class="meta">
+                    <span>{{ item.source_name }}</span>
+                    <strong>{{ "%.1f"|format(item.score or 0) }}</strong>
+                    <em class="image-status {{ item.image_usage }}">
+                      {% if item.image_usage == "publishable_candidate" %}
+                        官方图可用
+                      {% elif item.image_usage == "preview_only" %}
+                        非官方图禁用
+                      {% else %}
+                        无可用图
+                      {% endif %}
+                    </em>
+                    <em class="category-pill">{{ item.category_label }}</em>
+                    {% if item.published_at %}
+                      <time>{{ item.published_at[:16].replace("T", " ") }}</time>
+                    {% endif %}
+                  </div>
+                  <h3><a href="{{ item.url }}" target="_blank" rel="noreferrer">{{ item.title }}</a></h3>
+                  {% if item.summary %}
+                    <p class="summary">{{ item.summary }}</p>
+                  {% endif %}
+                  <div class="card-actions">
+                    <button class="ghost-button danger item-delete" type="button" data-item-id="{{ item.id }}">删除新闻</button>
+                  </div>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <div class="empty">
+              <h2>还没有采集结果</h2>
+              <p>点击“开始采集”后，系统会读取 config/sources.yml 中启用的信息源，抓取带发布时间的最新内容。</p>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section id="topics" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>选题分类与素材包</h2>
+            <p>根据热度、来源、主体和主题聚合成可写作的原创选题；生成草稿前可以人工新增、修改或删除。</p>
+          </div>
+          <button id="topicsButton" class="primary-button" type="button" {{ "" if status.has_items else "disabled" }}>生成选题</button>
+        </div>
+
+        <details class="topic-builder">
+          <summary>手动加入选题</summary>
+          <div class="topic-form-grid">
+            <label class="editor-field editor-full">
+              <span>选题标题</span>
+              <input id="manualTopicTitle" type="text" placeholder="例如：某款游戏更新为什么引发玩家争议">
+            </label>
+            <label class="editor-field editor-full">
+              <span>写作角度</span>
+              <textarea id="manualTopicAngle" rows="3" placeholder="这篇文章要回答什么问题，重点写哪些变化和影响"></textarea>
+            </label>
+            <label class="editor-field">
+              <span>主题标签</span>
+              <input id="manualTopicThemes" type="text" placeholder="游戏资讯, 社会热点">
+            </label>
+            <label class="editor-field">
+              <span>主体/关键词</span>
+              <input id="manualTopicEntities" type="text" placeholder="公司、产品、人物、游戏名">
+            </label>
+            <label class="editor-field editor-full">
+              <span>事实素材</span>
+              <textarea id="manualTopicFacts" rows="4" placeholder="每行一条事实、时间或关键背景"></textarea>
+            </label>
+            <label class="editor-field editor-full">
+              <span>原创结构</span>
+              <textarea id="manualTopicStructure" rows="4" placeholder="每行一个段落方向；不填则使用默认结构"></textarea>
+            </label>
+            <label class="editor-field editor-full">
+              <span>来源</span>
+              <textarea id="manualTopicSources" rows="3" placeholder="每行一个来源，可写：来源名 | 标题 | 链接"></textarea>
+            </label>
+          </div>
+          <div class="topic-form-actions">
+            <button id="manualTopicAdd" class="secondary-button" type="button">加入选题</button>
+          </div>
+        </details>
+
+        <div class="topic-list">
+          {% if topics %}
+            {% for topic in topics %}
+              <article class="topic-card" data-topic-id="{{ topic.id }}">
+                <div class="topic-head">
+                  <div>
+                    <p class="eyebrow">Score {{ "%.1f"|format(topic.score or 0) }}</p>
+                    <h2>{{ topic.title }}</h2>
+                  </div>
+                  <div class="topic-side">
+                    <div class="tags">
+                      {% for theme in topic.themes %}
+                        <span>{{ theme }}</span>
+                      {% endfor %}
+                    </div>
+                    <button class="ghost-button danger topic-delete" type="button" data-topic-id="{{ topic.id }}">删除选题</button>
+                  </div>
+                </div>
+                <p class="angle">{{ topic.angle }}</p>
+                <details class="topic-editor">
+                  <summary>编辑选题</summary>
+                  <div class="topic-form-grid">
+                    <label class="editor-field editor-full">
+                      <span>选题标题</span>
+                      <input class="topic-title-input" type="text" value="{{ topic.title|e }}">
+                    </label>
+                    <label class="editor-field editor-full">
+                      <span>写作角度</span>
+                      <textarea class="topic-angle-input" rows="3">{{ topic.angle|e }}</textarea>
+                    </label>
+                    <label class="editor-field">
+                      <span>主题标签</span>
+                      <input class="topic-themes-input" type="text" value="{{ topic.themes|join(', ')|e }}">
+                    </label>
+                    <label class="editor-field">
+                      <span>主体/关键词</span>
+                      <input class="topic-entities-input" type="text" value="{{ topic.entities|join(', ')|e }}">
+                    </label>
+                    <label class="editor-field editor-full">
+                      <span>事实素材</span>
+                      <textarea class="topic-facts-input" rows="4">{{ topic.facts|join('\n')|e }}</textarea>
+                    </label>
+                    <label class="editor-field editor-full">
+                      <span>原创结构</span>
+                      <textarea class="topic-structure-input" rows="4">{{ topic.structure|join('\n')|e }}</textarea>
+                    </label>
+                    <label class="editor-field editor-full">
+                      <span>来源</span>
+                      <textarea class="topic-sources-input" rows="3">{% for item in topic.source_items %}{{ item.source_name }} | {{ item.title }} | {{ item.url }}
+{% endfor %}</textarea>
+                    </label>
+                  </div>
+                  <div class="topic-form-actions">
+                    <button class="topic-save" type="button" data-topic-id="{{ topic.id }}">保存选题</button>
+                  </div>
+                </details>
+                <div class="topic-grid">
+                  <section>
+                    <h3>事实素材</h3>
+                    <ul>
+                      {% for fact in topic.facts[:5] %}
+                        <li>{{ fact }}</li>
+                      {% endfor %}
+                    </ul>
+                  </section>
+                  <section>
+                    <h3>来源</h3>
+                    <div class="source-links compact">
+                      {% for item in topic.source_items[:5] %}
+                        <a href="{{ item.url }}" target="_blank" rel="noreferrer">
+                          {{ item.source_name }} / {{ item.published_at[:10] if item.published_at else "" }} / {{ item.title }}
+                        </a>
+                      {% endfor %}
+                    </div>
+                  </section>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <div class="empty">
+              <h2>还没有选题</h2>
+              <p>先完成采集，再生成选题。未采集时点击按钮会返回明确错误。</p>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section id="drafts" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>文章草稿、排版与配图</h2>
+            <p>上方按钮只按下方选题生成文本草稿；确认文章满意后，再单独补齐配图。单篇里的“重新生成文本”只重写当前文章文本。</p>
+          </div>
+          <div class="panel-actions">
+            <button id="draftsButton" class="primary-button" type="button" data-has-drafts="{{ 'true' if status.has_drafts else 'false' }}" {{ "" if status.has_topics else "disabled" }}>
+              {{ "重新生成草稿" if status.has_drafts else "生成草稿" }}
+            </button>
+            <button id="coversButton" class="secondary-button" type="button" {{ "" if status.has_drafts else "disabled" }}>补齐/重生成配图</button>
+          </div>
+        </div>
+
+        {% if topics %}
+          <section
+            class="draft-topic-picker"
+            id="draftTopicPicker"
+            data-topics="{{ topics|tojson|forceescape }}"
+            data-default-topic-ids="{{ topics[:3]|map(attribute='id')|list|tojson|forceescape }}"
+            data-draft-topic-ids="{{ drafts|map(attribute='topic_id')|list|tojson|forceescape }}"
+          >
+            <div class="draft-topic-picker-head">
+              <div>
+                <strong>本次生成要用的选题</strong>
+                <p>删除不满意的选题，或从下拉框加入其它选题后再生成草稿。</p>
+              </div>
+              <span id="draftTopicCount"></span>
+            </div>
+            <div class="draft-topic-selected" id="draftTopicSelected" aria-live="polite"></div>
+            <div class="draft-topic-add-row">
+              <select id="draftTopicSelect" aria-label="选择要加入草稿生成的选题">
+                {% for topic in topics %}
+                  <option value="{{ topic.id }}">{{ topic.title }}</option>
+                {% endfor %}
+              </select>
+              <button class="mini-button" id="draftTopicAdd" type="button">加入选题</button>
+              <button class="mini-button" id="draftTopicFill" type="button">补足 3 个选题</button>
+            </div>
+          </section>
+        {% endif %}
+
+        {% if drafts %}
+          <div class="draft-pager" aria-label="文章分页">
+            {% for draft in drafts %}
+              {% set draft_index = loop.index0 %}
+              {% set layout = draft.layout or {} %}
+              {% set display_title = (title_prefix.bracketed ~ draft.title) if title_prefix.enabled else draft.title %}
+              <button class="draft-page-tab {{ 'is-active' if loop.first else '' }}" type="button" data-draft-index="{{ draft_index }}">
+                <strong>文章 {{ loop.index }}</strong>
+                <span>{{ display_title }}</span>
+                <em>{{ layout.image_count or 0 }} 张图</em>
+              </button>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="draft-list">
+          {% if drafts %}
+            {% for draft in drafts %}
+              {% set draft_index = loop.index0 %}
+              {% set layout = draft.layout or {} %}
+              {% set publish_state = draft_publication_status.get(draft_index|string) or {} %}
+              {% set display_title = (title_prefix.bracketed ~ draft.title) if title_prefix.enabled else draft.title %}
+              <article class="draft-card {{ 'is-active' if loop.first else '' }}" data-index="{{ draft_index }}">
+                <div class="draft-cover">
+                  {% if draft.cover_image %}
+                    <img class="zoomable-image" src="{{ draft.cover_image.url }}" alt="" data-full-src="{{ draft.cover_image.url }}">
+                    <button class="icon-danger cover-delete" type="button" data-draft-index="{{ draft_index }}">删除封面</button>
+                  {% else %}
+                    <div class="image-placeholder">未生成封面图</div>
+                  {% endif %}
+                </div>
+                <div class="draft-main">
+                  <div class="topic-head">
+                    <div>
+                      <p class="eyebrow">
+                        {{ layout.word_count_zh or 0 }} 字 / 
+                        {{ layout.section_count or 0 }} 节
+                      </p>
+                      <h2>{{ display_title }}</h2>
+                    </div>
+                    <div class="draft-actions">
+                      <div class="draft-action-group">
+                        <span class="action-group-label">通用</span>
+                        {% if publish_state.published %}
+                          <span class="published-badge">已发布 {{ publish_state.record.published_date }}</span>
+                        {% else %}
+                          <button class="ghost-button publish-record" type="button" data-draft-index="{{ draft_index }}">标记已发布</button>
+                        {% endif %}
+                        <button class="ghost-button draft-rewrite-title" type="button" data-draft-index="{{ draft_index }}">重写标题</button>
+                        <button class="ghost-button draft-regenerate" type="button" data-draft-index="{{ draft_index }}">重新生成文本</button>
+                        <button class="ghost-button draft-regenerate-heybox" type="button" data-draft-index="{{ draft_index }}" title="重新生成短文版正文，不覆盖长文版正文。">重写短文版</button>
+                        <button class="ghost-button danger draft-delete" type="button" data-draft-index="{{ draft_index }}">删除草稿</button>
+                      </div>
+                      <div class="draft-action-group">
+                        <span class="action-group-label">微信公众号</span>
+                        <button class="ghost-button draft-copy-wechat" type="button" data-draft-index="{{ draft_index }}" title="复制富文本到剪贴板，适合直接粘贴到微信公众号后台。">复制到微信</button>
+                        <button class="ghost-button draft-export-wechat" type="button" data-draft-index="{{ draft_index }}" title="生成微信公众号 HTML、接口 JSON 和 PNG 图片下载包。">导出微信格式</button>
+                        <button class="draft-sync-wechat" type="button" data-draft-index="{{ draft_index }}">同步到微信草稿箱</button>
+                      </div>
+                      <div class="draft-action-group">
+                        <span class="action-group-label">小黑盒</span>
+                        <button class="ghost-button draft-copy-heybox" type="button" data-draft-index="{{ draft_index }}" title="复制富文本到剪贴板，适合粘贴到小黑盒创作者后台。">复制到小黑盒</button>
+                        <button class="ghost-button draft-export-heybox" type="button" data-draft-index="{{ draft_index }}" title="生成小黑盒 HTML、Markdown、JSON 和 PNG 图片下载包。">导出小黑盒</button>
+                        <button class="ghost-button draft-automate-heybox" type="button" data-draft-index="{{ draft_index }}" title="打开可见浏览器，自动尝试填标题、正文和图片，最后停留给你审核。">半自动导入小黑盒</button>
+                      </div>
+                    </div>
+                  </div>
+                  {% if draft.subtitle %}
+                    <p class="angle">{{ draft.subtitle }}</p>
+                  {% endif %}
+                  <div class="title-choice-panel" data-draft-index="{{ draft_index }}">
+                    <label class="title-choice-field">
+                      <span>候选标题</span>
+                      <select class="title-candidate-select">
+                        <option value="{{ draft.title|e }}">当前标题：{{ display_title }}</option>
+                        {% for candidate in draft.title_candidates or [] if candidate != draft.title %}
+                          {% set candidate_display = (title_prefix.bracketed ~ candidate) if title_prefix.enabled else candidate %}
+                          <option value="{{ candidate|e }}">{{ candidate_display }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label class="title-choice-field title-choice-custom">
+                      <span>手动标题</span>
+                      <input class="title-choice-input" type="text" value="{{ draft.title|e }}" placeholder="选择候选或直接输入标题">
+                    </label>
+                    <button class="mini-button title-choice-apply" type="button" data-draft-index="{{ draft_index }}">应用标题</button>
+                  </div>
+                  <details class="draft-editor">
+                    <summary>编辑草稿</summary>
+                    <p class="editor-variant-note">当前编辑版本：<span class="draft-editor-variant-label">长文版</span></p>
+                    <div class="editor-grid">
+                      <label class="editor-field">
+                        <span>标题</span>
+                        <input class="draft-title-input" type="text" value="{{ draft.title|e }}">
+                      </label>
+                      <label class="editor-field">
+                        <span>副标题</span>
+                        <input class="draft-subtitle-input" type="text" value="{{ draft.subtitle|e }}">
+                      </label>
+                      <label class="editor-field editor-full">
+                        <span>正文 Markdown</span>
+                        <textarea class="draft-body-input" rows="18">{{ draft.body_markdown|e }}</textarea>
+                      </label>
+                    </div>
+                    <div class="editor-actions">
+                      <button class="draft-save" type="button" data-draft-index="{{ draft_index }}">保存修改</button>
+                    </div>
+                  </details>
+                  <section class="variant-preview-section" data-draft-index="{{ draft_index }}">
+                    <div class="variant-preview-head">
+                      <div>
+                        <h3>发布版本选择</h3>
+                        <p>对比长文版和短文版，选择后会影响微信复制、导出、同步草稿箱，以及小黑盒复制、导出和半自动导入。</p>
+                      </div>
+                      <button class="ghost-button variant-load" type="button" data-draft-index="{{ draft_index }}">加载两版预览</button>
+                    </div>
+                    <div class="variant-toolbar">
+                      <div class="variant-tabs" aria-label="文章版本">
+                        <button class="variant-tab is-active" type="button" data-variant="long">长文版</button>
+                        <button class="variant-tab" type="button" data-variant="short">短文版</button>
+                      </div>
+                      <div class="variant-choice-actions">
+                        <button class="mini-button variant-select" type="button" data-variant="long">选择长文版</button>
+                        <button class="mini-button variant-select" type="button" data-variant="short">选择短文版</button>
+                      </div>
+                    </div>
+                    <p class="variant-selected-note">当前文章版本：未加载</p>
+                    <div class="variant-preview-meta"></div>
+                    <div class="variant-preview-pane">
+                      <p class="muted">点击“加载两版预览”后，可以在这里查看带标题、粗体、红字和插图的实际效果。</p>
+                    </div>
+                  </section>
+                  <section class="image-candidate-section">
+                    <div class="image-candidate-head">
+                      <h3>按位置选择配图</h3>
+                      <span class="active-image-count" data-default-count="{{ layout.image_count or 0 }}">{{ layout.image_count or 0 }} 张已用于当前版本</span>
+                    </div>
+                    <div class="image-slot-tabs" aria-label="配图位置分页">
+                      {% for slot in draft.image_slots or [] %}
+                        <button class="image-slot-tab {{ 'is-active' if loop.first else '' }}" type="button" data-slot-id="{{ slot.slot_id }}">
+                          {% if slot.kind == "cover" %}
+                            封面
+                          {% else %}
+                            标题 {{ slot.position }}
+                          {% endif %}
+                        </button>
+                      {% endfor %}
+                    </div>
+                    <div class="image-slot-list">
+                      {% for slot in draft.image_slots or [] %}
+                        <section class="image-slot {{ 'is-active' if loop.first else '' }}" data-slot-id="{{ slot.slot_id }}">
+                          <div class="image-slot-head">
+                            <div>
+                              <strong>
+                                {% if slot.kind == "cover" %}
+                                  封面/开头
+                                {% else %}
+                                  小标题 {{ slot.position }}
+                                {% endif %}
+                              </strong>
+                              <span>{{ slot.label }}</span>
+                            </div>
+                            <div class="image-slot-actions">
+                              <button class="ghost-button slot-image-import" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">导入图片</button>
+                              <input class="slot-image-file" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">
+                              <button class="ghost-button slot-image-screenshot" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">官网截图</button>
+                              <button class="ghost-button slot-image-generate" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">重新生成这个位置</button>
+                              <button class="ghost-button slot-image-clear" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">此处不插图</button>
+                            </div>
+                          </div>
+                          <div class="image-candidate-grid">
+                            {% for image in slot.candidate_pool or [] %}
+                              <article
+                                class="image-candidate-card {{ 'is-selected' if image.selected else '' }}"
+                                data-slot-id="{{ slot.slot_id }}"
+                                data-image-url="{{ image.url }}"
+                                data-publishable="{{ 'true' if image.publishable else 'false' }}"
+                                data-source-type="{{ image.source_type }}"
+                                data-caption="{{ image.caption|default('', true)|e }}"
+                              >
+                                <button class="image-zoom-button" type="button" data-full-src="{{ image.url }}">
+                                  <img src="{{ image.url }}" alt="">
+                                </button>
+                                <div class="candidate-meta">
+                                  <span>
+                                    {% if image.source_type == "official" %}
+                                      官方图
+                                    {% elif image.source_type == "official_screenshot" %}
+                                      官网截图
+                                    {% elif image.source_type in ["generated_cover", "generated_section", "generated"] %}
+                                      生成图
+                                    {% elif image.source_type == "manual_upload" %}
+                                      导入图
+                                    {% elif image.source_type == "opinion_screenshot" %}
+                                      舆论图
+                                    {% elif image.source_type == "media_preview" %}
+                                      媒体图
+                                    {% else %}
+                                      备选图
+                                    {% endif %}
+                                  </span>
+                                  <span class="candidate-action">
+                                    {% if image.selected %}
+                                      <strong>当前使用</strong>
+                                      <button class="mini-button danger-mini slot-image-clear" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">此处不插图</button>
+                                    {% elif image.publishable %}
+                                      <button class="mini-button slot-image-select" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}" data-image-url="{{ image.url }}">设为此处配图</button>
+                                      <button class="mini-button danger-mini slot-image-delete" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}" data-image-url="{{ image.url }}">删除候选</button>
+                                    {% else %}
+                                      <button class="mini-button slot-image-select" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}" data-image-url="{{ image.url }}">人工选用到此处</button>
+                                      <button class="mini-button danger-mini slot-image-delete" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}" data-image-url="{{ image.url }}">删除候选</button>
+                                    {% endif %}
+                                  </span>
+                                </div>
+                                {% if image.reasons %}
+                                  <p>{{ image.reasons|join("；") }}</p>
+                                {% endif %}
+                                {% if image.selected %}
+                                  <div class="image-caption-editor">
+                                    <label>
+                                      <span>图解</span>
+                                      <textarea class="slot-image-caption-input" rows="2">{{ image.caption|default('', true)|e }}</textarea>
+                                    </label>
+                                    <div class="image-caption-actions">
+                                      <button class="mini-button slot-image-caption-save" type="button" data-draft-index="{{ draft_index }}" data-slot-id="{{ slot.slot_id }}">保存图解</button>
+                                    </div>
+                                  </div>
+                                {% endif %}
+                              </article>
+                            {% endfor %}
+                          </div>
+                        </section>
+                      {% endfor %}
+                    </div>
+                  </section>
+                  <div class="wechat-preview" hidden aria-hidden="true">
+                    {{ draft.formatted_html|safe }}
+                  </div>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <div class="empty">
+              <h2>还没有文章草稿</h2>
+              <p>先生成选题，再生成草稿。系统会自动检查前置条件并返回错误原因。</p>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section id="sources" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>来源配置</h2>
+            <p>这里展示当前启用状态。修改来源请编辑 config/sources.yml。</p>
+          </div>
+        </div>
+        <div class="source-grid">
+          {% for source in sources %}
+            <div class="source-row {{ '' if source.enabled else 'disabled' }}">
+              <div>
+                <strong>{{ source.name }}</strong>
+                <p>{{ source.type }} / {{ source.id }}</p>
+              </div>
+              <span>{{ "ON" if source.enabled else "OFF" }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section id="records" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>发布备案与历史记录</h2>
+            <p>这里记录已经发布过的文章，按日期归档，用于防止重复发布，也方便回查某一天发布了什么。</p>
+          </div>
+          <div class="panel-actions">
+            <button id="serverStatusButton" type="button">检测端口</button>
+            <button id="wechatStatusButton" type="button">检测微信配置</button>
+            <button id="databaseBackfillButton" type="button">同步现有数据到 SQLite</button>
+          </div>
+        </div>
+        <div id="serverStatus" class="server-status" data-copy="">
+          <div>
+            <strong id="serverPort">未检测</strong>
+            <span>当前端口</span>
+          </div>
+          <div>
+            <strong id="serverHost">-</strong>
+            <span>当前主机</span>
+          </div>
+          <div>
+            <strong id="serverScheme">-</strong>
+            <span>协议</span>
+          </div>
+          <div>
+            <strong id="serverPublicIp">未检测</strong>
+            <span>当前公网 IP</span>
+          </div>
+          <code id="serverBaseUrl">点击“检测端口”获取当前访问地址</code>
+          <code id="serverCallbackUrl">抖音回调地址会在这里显示</code>
+          <button id="copyServerStatusButton" type="button">复制地址信息</button>
+        </div>
+        <div id="wechatStatus" class="wechat-status">
+          <div>
+            <strong id="wechatAppId">未检测</strong>
+            <span>AppID</span>
+          </div>
+          <div>
+            <strong id="wechatSecretLength">-</strong>
+            <span>Secret 长度</span>
+          </div>
+          <div>
+            <strong id="wechatTokenResult">-</strong>
+            <span>Token 测试</span>
+          </div>
+          <code id="wechatStatusMessage">点击“检测微信配置”会真实请求微信 access_token，不会显示完整 AppSecret。</code>
+        </div>
+        <div class="database-status">
+          <div>
+            <strong>{{ database.counts.news_items or 0 }}</strong>
+            <span>新闻</span>
+          </div>
+          <div>
+            <strong>{{ database.counts.topics or 0 }}</strong>
+            <span>选题</span>
+          </div>
+          <div>
+            <strong>{{ database.counts.drafts or 0 }}</strong>
+            <span>草稿</span>
+          </div>
+          <div>
+            <strong>{{ database.counts.publications or 0 }}</strong>
+            <span>发布记录</span>
+          </div>
+          <div>
+            <strong>{{ database.counts.wechat_exports or 0 }}</strong>
+            <span>公众号导出</span>
+          </div>
+          <div>
+            <strong>{{ database.counts.platform_exports or 0 }}</strong>
+            <span>平台导出</span>
+          </div>
+          <code>{{ database.db_path }}</code>
+        </div>
+        <div class="records-layout">
+          <aside class="record-dates">
+            {% if publication.dates %}
+              {% for item in publication.dates %}
+                <button class="record-date-tab {{ 'is-active' if loop.first else '' }}" type="button" data-record-date="{{ item.date }}">
+                  <strong>{{ item.date }}</strong>
+                  <span>{{ item.count }} 篇</span>
+                </button>
+              {% endfor %}
+            {% else %}
+              <div class="empty compact">
+                <p>还没有发布备案。</p>
+              </div>
+            {% endif %}
+          </aside>
+          <div class="record-list">
+            {% if publication.records %}
+              {% for record in publication.records %}
+                <article class="record-card" data-record-date="{{ record.published_date }}">
+                  <div>
+                    <p class="eyebrow">{{ record.channel }} / {{ record.published_at[:16].replace("T", " ") }}</p>
+                    <h3>{{ record.title }}</h3>
+                    {% if record.subtitle %}
+                      <p>{{ record.subtitle }}</p>
+                    {% endif %}
+                  </div>
+                  <div class="record-meta">
+                    <span>{{ record.word_count_zh or 0 }} 字</span>
+                    <span>{{ record.image_count or 0 }} 图</span>
+                    <span>{{ record.source_count or 0 }} 素材</span>
+                  </div>
+                  {% if record.note %}
+                    <p class="summary">{{ record.note }}</p>
+                  {% endif %}
+                  <code>{{ record.archive_path }}</code>
+                </article>
+              {% endfor %}
+            {% else %}
+              <div class="empty">
+                <h2>还没有发布记录</h2>
+                <p>在草稿页点击“标记已发布”后，系统会写入本地备案并按日期归档。</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section id="opinions" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>普通用户评价素材</h2>
+            <p>自动采集只使用已配置授权接口；手动文本会生成评论卡片，截图导入会按上传图片原样写入草稿并生成点评。</p>
+          </div>
+        </div>
+        <div class="opinion-tools">
+          <section>
+            <h3>抖音授权</h3>
+            <div class="opinion-form stacked">
+              <div class="opinion-form">
+                <button id="douyinAuthStatusButton" type="button">授权状态</button>
+                <button id="douyinAuthUrlButton" type="button">生成授权链接</button>
+                <button id="douyinAuthRefreshButton" type="button">刷新Token</button>
+              </div>
+              <input id="douyinAuthCode" type="text" placeholder="授权回调里的 code，可粘贴到这里保存">
+              <button id="douyinAuthExchangeButton" type="button">保存授权Code</button>
+            </div>
+            <p>先在 .env 填 DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET / DOUYIN_REDIRECT_URI，再生成授权链接。</p>
+          </section>
+          <section>
+            <h3>自动采集</h3>
+            <div class="opinion-form">
+              <select id="opinionPlatform">
+                <option value="douyin">抖音</option>
+                <option value="weibo">微博</option>
+              </select>
+              <input id="opinionQuery" type="text" placeholder="proxy 填关键词；official_video 填抖音视频 ID 或链接">
+              <button id="opinionConfigButton" type="button">检测配置</button>
+              <button id="opinionCollectButton" type="button">采集评论</button>
+            </div>
+            <p>抖音支持 proxy 中转模式和 official_video 官方视频评论模式；关键词全网评论需开通 official_keyword 搜索权限。</p>
+          </section>
+          <section>
+            <h3>手动导入评论文本</h3>
+            <div class="opinion-form stacked">
+              <input id="manualOpinionTopic" type="text" placeholder="话题关键词">
+              <textarea id="manualOpinionText" rows="5" placeholder="每行一条评论，系统会自动匿名化并生成评论卡片"></textarea>
+              <button id="manualOpinionButton" type="button">导入文本</button>
+            </div>
+          </section>
+          <section>
+            <h3>手动导入评论截图</h3>
+            <div class="opinion-form stacked">
+              <select id="opinionScreenshotDraft" aria-label="选择这张评论截图关联的草稿" {% if not drafts %}disabled{% endif %}>
+                <option value="">{% if drafts %}先选择这张截图对应的草稿{% else %}请先生成草稿后再导入截图{% endif %}</option>
+                {% for draft in drafts %}
+                  {% set draft_index = loop.index0 %}
+                  <option
+                    value="{{ draft_index }}"
+                    data-draft-id="{{ draft.draft_id|default('', true)|e }}"
+                    data-topic-id="{{ draft.topic_id|default('', true)|e }}"
+                    data-draft-title="{{ draft.title|e }}"
+                  >第 {{ draft_index + 1 }} 篇：{{ draft.title }}</option>
+                {% endfor %}
+              </select>
+              <input id="opinionScreenshotTopic" type="text" placeholder="话题关键词，会随草稿自动填入">
+              <input id="opinionScreenshotFile" type="file" accept="image/png,image/jpeg,image/webp">
+              <input id="opinionScreenshotNote" type="text" placeholder="备注，可选">
+              <button id="opinionScreenshotButton" type="button">导入截图</button>
+            </div>
+            <p>截图请在上传前自行处理头像、昵称等信息；系统会原样保存，并根据备注和关联草稿生成舆论点评。</p>
+          </section>
+        </div>
+        <div class="opinion-list">
+          {% if opinions %}
+            {% for opinion in opinions %}
+              <article class="opinion-card">
+                {% if opinion.card and opinion.card.url %}
+                  <button class="image-zoom-button" type="button" data-full-src="{{ opinion.card.url }}">
+                    <img src="{{ opinion.card.url }}" alt="">
+                  </button>
+                {% elif opinion.screenshot and opinion.screenshot.url %}
+                  <button class="image-zoom-button" type="button" data-full-src="{{ opinion.screenshot.url }}">
+                    <img src="{{ opinion.screenshot.url }}" alt="">
+                  </button>
+                {% endif %}
+                <div>
+                  <strong>{{ opinion.topic }}</strong>
+                  {% if opinion.draft_ref and opinion.draft_ref.draft_title %}
+                    <em class="opinion-draft-ref">关联草稿：{{ opinion.draft_ref.draft_title }}</em>
+                  {% endif %}
+                  <p>{{ opinion.text }}</p>
+                  <span>{{ opinion.platform }} / {{ opinion.source_type }} / {{ opinion.collected_at[:16].replace("T", " ") }}</span>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <div class="empty">
+              <h2>还没有舆论素材</h2>
+              <p>可以先手动导入几条评论文本，或导入已处理好的评论截图；自动采集需要配置授权接口。</p>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section id="changelog" class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>更新日志</h2>
+            <p>按时间线记录这个 Agent 新增的功能、接口、修复和 prompt/skill 调整。</p>
+          </div>
+        </div>
+        {% if changelog %}
+          <div class="changelog-list">
+            {% for entry in changelog %}
+              <article class="changelog-card">
+                <div class="changelog-time">
+                  <time>{{ entry.timestamp[:16].replace("T", " ") }}</time>
+                  <span>{{ entry.category }}</span>
+                </div>
+                <div class="changelog-body">
+                  <h3>{{ entry.title }}</h3>
+                  <ul>
+                    {% for detail in entry.details %}
+                      <li>{{ detail }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty">
+            <h2>还没有更新记录</h2>
+            <p>后续功能推进会记录在 data/changelog.json。</p>
+          </div>
+        {% endif %}
+      </section>
+    </main>
+
+    <div id="imageLightbox" class="image-lightbox" hidden>
+      <button class="lightbox-close" type="button" aria-label="关闭大图">关闭</button>
+      <img src="" alt="">
+    </div>
+
+    <div id="resultDialog" class="result-dialog" hidden>
+      <div class="result-dialog-card" role="alertdialog" aria-modal="true" aria-labelledby="resultDialogTitle">
+        <p id="resultDialogTitle" class="result-dialog-title">操作结果</p>
+        <p id="resultDialogMessage" class="result-dialog-message"></p>
+        <button id="resultDialogClose" type="button">知道了</button>
+      </div>
+    </div>
+
+    <div id="copyFallback" class="copy-fallback" hidden>
+      <div class="copy-fallback-card">
+        <div class="copy-fallback-head">
+          <strong>手动复制富文本</strong>
+          <button id="copyFallbackClose" class="ghost-button" type="button">关闭</button>
+        </div>
+        <div id="copyFallbackContent" class="copy-fallback-content" contenteditable="true"></div>
+      </div>
+    </div>
+
+    <div id="heyboxAutomationDialog" class="copy-fallback" hidden>
+      <div class="copy-fallback-card">
+        <div class="copy-fallback-head">
+          <strong>小黑盒半自动导入</strong>
+          <button id="heyboxAutomationClose" class="ghost-button" type="button">收起</button>
+        </div>
+        <div class="automation-status">
+          <p id="heyboxAutomationMessage">等待任务开始。</p>
+          <div class="automation-browser">
+            <img id="heyboxAutomationScreen" alt="小黑盒浏览器同步画面" hidden>
+            <div id="heyboxAutomationEmpty" class="automation-empty">浏览器同步画面尚未准备好。</div>
+          </div>
+          <div class="automation-input-row">
+            <input id="heyboxAutomationText" type="text" placeholder="向小黑盒浏览器输入文字">
+            <button id="heyboxAutomationType" class="ghost-button" type="button">输入</button>
+            <button id="heyboxAutomationEnter" class="ghost-button" type="button">回车</button>
+            <button id="heyboxAutomationRefresh" class="ghost-button" type="button">刷新画面</button>
+          </div>
+          <div id="heyboxAutomationLogs" class="automation-logs"></div>
+          <div class="automation-actions">
+            <button id="heyboxAutomationContinue" type="button">继续自动导入</button>
+            <button id="heyboxAutomationStop" class="ghost-button danger" type="button">关闭浏览器</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const notice = document.querySelector("#notice");
+      const lightbox = document.querySelector("#imageLightbox");
+      const lightboxImage = lightbox.querySelector("img");
+      const lightboxClose = lightbox.querySelector(".lightbox-close");
+      const resultDialog = document.querySelector("#resultDialog");
+      const resultDialogTitle = document.querySelector("#resultDialogTitle");
+      const resultDialogMessage = document.querySelector("#resultDialogMessage");
+      const resultDialogClose = document.querySelector("#resultDialogClose");
+      const copyFallback = document.querySelector("#copyFallback");
+      const copyFallbackContent = document.querySelector("#copyFallbackContent");
+      const copyFallbackClose = document.querySelector("#copyFallbackClose");
+      const heyboxAutomationDialog = document.querySelector("#heyboxAutomationDialog");
+      const heyboxAutomationClose = document.querySelector("#heyboxAutomationClose");
+      const heyboxAutomationMessage = document.querySelector("#heyboxAutomationMessage");
+      const heyboxAutomationScreen = document.querySelector("#heyboxAutomationScreen");
+      const heyboxAutomationEmpty = document.querySelector("#heyboxAutomationEmpty");
+      const heyboxAutomationText = document.querySelector("#heyboxAutomationText");
+      const heyboxAutomationType = document.querySelector("#heyboxAutomationType");
+      const heyboxAutomationEnter = document.querySelector("#heyboxAutomationEnter");
+      const heyboxAutomationRefresh = document.querySelector("#heyboxAutomationRefresh");
+      const heyboxAutomationLogs = document.querySelector("#heyboxAutomationLogs");
+      const heyboxAutomationContinue = document.querySelector("#heyboxAutomationContinue");
+      const heyboxAutomationStop = document.querySelector("#heyboxAutomationStop");
+      let heyboxAutomationTimer = null;
+
+      function showNotice(message, type = "info") {
+        notice.hidden = false;
+        notice.className = `notice ${type}`;
+        notice.textContent = message;
+      }
+
+      function showResultDialog(title, message, type = "success") {
+        resultDialog.hidden = false;
+        resultDialog.className = `result-dialog ${type}`;
+        resultDialogTitle.textContent = title;
+        resultDialogMessage.textContent = message;
+        resultDialogClose.focus();
+      }
+
+      async function callApi(url, options = {}) {
+        const response = await fetch(url, options.body instanceof FormData
+          ? { ...options, headers: options.headers || {} }
+          : { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+        const payload = await response.json().catch(() => ({ ok: false, message: "接口返回不是 JSON" }));
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.message || `请求失败：${response.status}`);
+        }
+        return payload;
+      }
+
+      async function copyText(text, successMessage) {
+        try {
+          await navigator.clipboard.writeText(text);
+          showNotice(successMessage, "success");
+          showResultDialog("复制成功", successMessage, "success");
+        } catch (error) {
+          copyFallback.hidden = false;
+          copyFallbackContent.textContent = text;
+          copyFallbackContent.focus();
+          document.execCommand("selectAll", false, null);
+          showNotice("浏览器拦截了自动复制，请在弹窗中手动复制。", "error");
+        }
+      }
+
+      async function runAction(button, label, url, options = {}) {
+        button.disabled = true;
+        const oldText = button.textContent;
+        button.textContent = `${label}中...`;
+        try {
+          const payload = await callApi(url, options);
+          const message = payload.message || `${label}成功`;
+          showNotice(message, "success");
+          showResultDialog(`${label}成功`, message, "success");
+          window.setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+          const message = error.message || `${label}失败`;
+          showNotice(message, "error");
+          showResultDialog(`${label}失败`, message, "error");
+          button.textContent = oldText;
+          button.disabled = false;
+        }
+      }
+
+      async function runInlineAction(button, label, url, options = {}) {
+        button.disabled = true;
+        const oldText = button.textContent;
+        button.textContent = `${label}中...`;
+        try {
+          const payload = await callApi(url, options);
+          const message = payload.message || `${label}成功`;
+          showNotice(message, "success");
+          showResultDialog(`${label}成功`, message, "success");
+          return payload;
+        } catch (error) {
+          const message = error.message || `${label}失败`;
+          showNotice(message, "error");
+          showResultDialog(`${label}失败`, message, "error");
+          throw error;
+        } finally {
+          button.textContent = oldText;
+          button.disabled = false;
+        }
+      }
+
+      function splitLines(value) {
+        return (value || "")
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function splitTags(value) {
+        return (value || "")
+          .split(/[,，、\r\n]+/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function parseTopicSources(value) {
+        return splitLines(value).map((line) => {
+          const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+          if (parts.length >= 3) {
+            return { source_name: parts[0], title: parts[1], url: parts.slice(2).join(" | ") };
+          }
+          if (parts.length === 2) {
+            return parts[0].startsWith("http")
+              ? { url: parts[0], title: parts[1], source_name: "人工来源" }
+              : { title: parts[0], url: parts[1], source_name: "人工来源" };
+          }
+          return line.startsWith("http")
+            ? { url: line, title: line, source_name: "人工来源" }
+            : { title: line, source_name: "人工来源" };
+        });
+      }
+
+      function manualTopicPayload() {
+        return {
+          title: document.querySelector("#manualTopicTitle")?.value || "",
+          angle: document.querySelector("#manualTopicAngle")?.value || "",
+          themes: splitTags(document.querySelector("#manualTopicThemes")?.value || ""),
+          entities: splitTags(document.querySelector("#manualTopicEntities")?.value || ""),
+          facts: splitLines(document.querySelector("#manualTopicFacts")?.value || ""),
+          structure: splitLines(document.querySelector("#manualTopicStructure")?.value || ""),
+          source_items: parseTopicSources(document.querySelector("#manualTopicSources")?.value || "")
+        };
+      }
+
+      function topicPayloadFromCard(card) {
+        return {
+          title: card.querySelector(".topic-title-input")?.value || "",
+          angle: card.querySelector(".topic-angle-input")?.value || "",
+          themes: splitTags(card.querySelector(".topic-themes-input")?.value || ""),
+          entities: splitTags(card.querySelector(".topic-entities-input")?.value || ""),
+          facts: splitLines(card.querySelector(".topic-facts-input")?.value || ""),
+          structure: splitLines(card.querySelector(".topic-structure-input")?.value || ""),
+          source_items: parseTopicSources(card.querySelector(".topic-sources-input")?.value || "")
+        };
+      }
+
+      function variantLabel(variant) {
+        return variant === "long" ? "长文版" : "短文版";
+      }
+
+      function updateVariantSelection(section, selectedVariant) {
+        const variant = selectedVariant || "long";
+        section.dataset.selectedVariant = variant;
+        const note = section.querySelector(".variant-selected-note");
+        if (note) {
+          note.textContent = `当前文章版本：${variantLabel(variant)}`;
+        }
+        section.querySelectorAll(".variant-select").forEach((button) => {
+          button.classList.toggle("is-selected", button.dataset.variant === variant);
+        });
+      }
+
+      function uniqueTitleOptions(items) {
+        const seen = new Set();
+        const results = [];
+        items.forEach((item) => {
+          const raw = String(item?.raw || "").trim();
+          if (!raw || seen.has(raw)) return;
+          seen.add(raw);
+          results.push({ raw, label: String(item?.label || raw) });
+        });
+        return results;
+      }
+
+      function titleOptionHtml(raw, label) {
+        return `<option value="${escapeHtml(raw)}">${escapeHtml(label)}</option>`;
+      }
+
+      function updateTitleChoiceControls(draftCard, payload) {
+        if (!draftCard) return;
+        const draft = payload.draft || {};
+        const rawTitle = draft.title || payload.title || "";
+        if (!rawTitle) return;
+        const displayTitle = payload.display_title || draft.display_title || rawTitle;
+        const titleNode = draftCard.querySelector(".topic-head h2");
+        if (titleNode) titleNode.textContent = displayTitle;
+        const titleInput = draftCard.querySelector(".draft-title-input");
+        if (titleInput) titleInput.value = rawTitle;
+        const choiceInput = draftCard.querySelector(".title-choice-input");
+        if (choiceInput) choiceInput.value = rawTitle;
+        const draftIndex = draftCard.dataset.index;
+        const tabTitle = document.querySelector(`.draft-page-tab[data-draft-index="${draftIndex}"] span`);
+        if (tabTitle) tabTitle.textContent = displayTitle;
+
+        const subtitle = draft.subtitle ?? payload.subtitle;
+        if (subtitle !== undefined) {
+          const subtitleInput = draftCard.querySelector(".draft-subtitle-input");
+          if (subtitleInput) subtitleInput.value = subtitle || "";
+          let angle = draftCard.querySelector(".angle");
+          if (subtitle) {
+            if (!angle) {
+              angle = document.createElement("p");
+              angle.className = "angle";
+              const panel = draftCard.querySelector(".title-choice-panel");
+              panel?.before(angle);
+            }
+            angle.textContent = subtitle;
+          } else if (angle) {
+            angle.remove();
+          }
+        }
+
+        const candidates = payload.candidates || draft.title_candidates || [];
+        const displayCandidates = payload.display_candidates || candidates;
+        const options = uniqueTitleOptions([
+          { raw: rawTitle, label: `当前标题：${displayTitle}` },
+          ...candidates.map((candidate, index) => ({
+            raw: candidate,
+            label: displayCandidates[index] || candidate
+          }))
+        ]);
+        const select = draftCard.querySelector(".title-candidate-select");
+        if (select) {
+          select.innerHTML = options.map((item) => titleOptionHtml(item.raw, item.label)).join("");
+          select.value = rawTitle;
+        }
+      }
+
+      function setDraftEditorVariant(draftCard, variant, current) {
+        if (!draftCard || !current) return;
+        const editor = draftCard.querySelector(".draft-editor");
+        if (editor) {
+          editor.dataset.variant = variant;
+        }
+        const label = draftCard.querySelector(".draft-editor-variant-label");
+        if (label) {
+          label.textContent = variantLabel(variant);
+        }
+        const titleInput = draftCard.querySelector(".draft-title-input");
+        const subtitleInput = draftCard.querySelector(".draft-subtitle-input");
+        const bodyInput = draftCard.querySelector(".draft-body-input");
+        if (titleInput) titleInput.value = current.title || "";
+        if (subtitleInput) subtitleInput.value = current.subtitle || "";
+        if (bodyInput) bodyInput.value = current.body_markdown || "";
+      }
+
+      function renderVariantPreview(section, variant) {
+        const preview = section.__variantPreview || {};
+        const variants = preview.variants || {};
+        const current = variants[variant];
+        const pane = section.querySelector(".variant-preview-pane");
+        const meta = section.querySelector(".variant-preview-meta");
+        section.querySelectorAll(".variant-tab").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.variant === variant);
+        });
+        if (!current) {
+          if (pane) pane.innerHTML = '<p class="muted">还没有加载这版预览。</p>';
+          if (meta) meta.innerHTML = "";
+          return;
+        }
+        section.dataset.activeVariant = variant;
+        const draftCard = section.closest(".draft-card");
+        setDraftEditorVariant(draftCard, variant, current);
+        const activeImageCount = draftCard?.querySelector(".active-image-count");
+        if (activeImageCount) {
+          activeImageCount.textContent = `${current.image_count || 0} 张已用于当前版本`;
+        }
+        if (meta) {
+          meta.innerHTML = [
+            `<span>${current.label || variantLabel(variant)}</span>`,
+            `<span>${current.word_count_zh || 0} 字</span>`,
+            `<span>${current.section_count || 0} 个小标题</span>`,
+            `<span>${current.image_count || 0} 张图</span>`
+          ].join("");
+        }
+        if (pane) {
+          pane.innerHTML = current.html || '<p class="muted">这版文章没有可展示的内容。</p>';
+        }
+      }
+
+      async function loadVariantPreviews(draftCard, draftIndex, preferredVariant = null, options = {}) {
+        const section = draftCard?.querySelector(".variant-preview-section");
+        if (!section) return null;
+        const pane = section.querySelector(".variant-preview-pane");
+        const loadButton = section.querySelector(".variant-load");
+        const oldText = loadButton?.textContent;
+        if (loadButton) {
+          loadButton.disabled = true;
+          loadButton.textContent = "加载中...";
+        }
+        if (pane) {
+          pane.innerHTML = '<p class="muted">正在生成两版富文本预览...</p>';
+        }
+        try {
+          const payload = await callApi(`/api/drafts/${draftIndex}/variants`);
+          const preview = payload.variant_preview || {};
+          section.__variantPreview = preview;
+          const selectedVariant = preview.selected_variant || "long";
+          updateVariantSelection(section, selectedVariant);
+          const variants = preview.variants || {};
+          const targetVariant = variants[preferredVariant] ? preferredVariant : (variants[selectedVariant] ? selectedVariant : "long");
+          renderVariantPreview(section, targetVariant);
+          if (!options.silent) {
+            showNotice("两版文章预览已加载。", "success");
+          }
+          return preview;
+        } catch (error) {
+          const message = error.message || "加载版本预览失败";
+          if (pane) pane.innerHTML = `<p class="muted">${message}</p>`;
+          showNotice(message, "error");
+          showResultDialog("加载预览失败", message, "error");
+          throw error;
+        } finally {
+          if (loadButton) {
+            loadButton.textContent = oldText;
+            loadButton.disabled = false;
+          }
+        }
+      }
+
+      function imageTypeLabel(sourceType) {
+        if (sourceType === "official") return "官方图";
+        if (sourceType === "official_screenshot") return "官网截图";
+        if (["generated_cover", "generated_section", "generated"].includes(sourceType)) return "生成图";
+        if (sourceType === "manual_upload") return "导入图";
+        if (sourceType === "opinion_screenshot") return "舆论图";
+        if (sourceType === "media_preview") return "媒体图";
+        return "备选图";
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function candidateActionHtml(draftIndex, slotId, imageUrl, publishable, selected = false) {
+        const safeDraftIndex = escapeHtml(draftIndex);
+        const safeSlotId = escapeHtml(slotId);
+        const safeImageUrl = escapeHtml(imageUrl);
+        if (selected) {
+          return `<strong>当前使用</strong><button class="mini-button danger-mini slot-image-clear" type="button" data-draft-index="${safeDraftIndex}" data-slot-id="${safeSlotId}">此处不插图</button>`;
+        }
+        const text = publishable ? "设为此处配图" : "人工选用到此处";
+        return `<button class="mini-button slot-image-select" type="button" data-draft-index="${safeDraftIndex}" data-slot-id="${safeSlotId}" data-image-url="${safeImageUrl}">${text}</button><button class="mini-button danger-mini slot-image-delete" type="button" data-draft-index="${safeDraftIndex}" data-slot-id="${safeSlotId}" data-image-url="${safeImageUrl}">删除候选</button>`;
+      }
+
+      function captionEditorHtml(draftIndex, slotId, caption = "") {
+        return `
+          <div class="image-caption-editor">
+            <label>
+              <span>图解</span>
+              <textarea class="slot-image-caption-input" rows="2">${escapeHtml(caption)}</textarea>
+            </label>
+            <div class="image-caption-actions">
+              <button class="mini-button slot-image-caption-save" type="button" data-draft-index="${escapeHtml(draftIndex)}" data-slot-id="${escapeHtml(slotId)}">保存图解</button>
+            </div>
+          </div>
+        `;
+      }
+
+      function syncCaptionEditorForCard(card, selected, draftIndex, slotId) {
+        const editor = card.querySelector(".image-caption-editor");
+        if (!selected) {
+          editor?.remove();
+          return;
+        }
+        if (!editor) {
+          card.insertAdjacentHTML("beforeend", captionEditorHtml(draftIndex, slotId, card.dataset.caption || ""));
+        }
+      }
+
+      async function refreshVariantPreviewForDraft(draftCard, preferredVariant = null) {
+        const section = draftCard?.querySelector(".variant-preview-section");
+        if (!section || !section.__variantPreview) return null;
+        const draftIndex = section.dataset.draftIndex || draftCard.dataset.index;
+        const variant = preferredVariant || section.dataset.activeVariant || section.dataset.selectedVariant || "long";
+        return loadVariantPreviews(draftCard, draftIndex, variant, { silent: true });
+      }
+
+      function updateSlotSelection(draftCard, slotId, imageUrl, sourceType = "image", publishable = true) {
+        const slot = draftCard.querySelector(`.image-slot[data-slot-id="${CSS.escape(slotId)}"]`);
+        if (!slot) return;
+        let selectedCard = null;
+        slot.querySelectorAll(".image-candidate-card").forEach((card) => {
+          const selected = card.dataset.imageUrl === imageUrl;
+          card.classList.toggle("is-selected", selected);
+          if (selected) selectedCard = card;
+          const action = card.querySelector(".candidate-action");
+          if (!action) return;
+          if (selected) {
+            action.innerHTML = candidateActionHtml(draftCard.dataset.index, slotId, card.dataset.imageUrl, true, true);
+          } else {
+            action.innerHTML = candidateActionHtml(draftCard.dataset.index, slotId, card.dataset.imageUrl, card.dataset.publishable === "true", false);
+          }
+          syncCaptionEditorForCard(card, selected, draftCard.dataset.index, slotId);
+        });
+        const previewSourceType = selectedCard?.dataset.sourceType || sourceType;
+        const caption = selectedCard?.dataset.caption || "";
+        if (selectedCard) {
+          selectedCard.parentElement?.prepend(selectedCard);
+        }
+        updatePreviewImage(draftCard, slotId, imageUrl, previewSourceType, caption);
+        if (slotId === "cover") {
+          const coverImg = draftCard.querySelector(".draft-cover img");
+          if (coverImg) {
+            coverImg.src = imageUrl;
+            coverImg.dataset.fullSrc = imageUrl;
+          }
+        }
+      }
+
+      function updatePreviewImage(draftCard, slotId, imageUrl, sourceType = "image", caption = "") {
+        let figure = draftCard.querySelector(`.wechat-preview .wechat-article-image[data-slot-id="${CSS.escape(slotId)}"]`);
+        if (!figure) {
+          const preview = draftCard.querySelector(".wechat-preview");
+          if (!preview) return;
+          figure = document.createElement("figure");
+          figure.className = "wechat-article-image";
+          figure.dataset.slotId = slotId;
+          figure.innerHTML = '<img src="" alt="">';
+          if (slotId === "cover") {
+            preview.prepend(figure);
+          } else {
+            const sectionNumber = Number(String(slotId).replace("section-", ""));
+            const headings = preview.querySelectorAll("h2, h3");
+            const heading = headings[sectionNumber - 1];
+            if (heading) {
+              heading.insertAdjacentElement("afterend", figure);
+            } else {
+              preview.append(figure);
+            }
+          }
+        }
+        const img = figure.querySelector("img");
+        if (img) img.src = imageUrl;
+        let figcaption = figure.querySelector("figcaption");
+        const normalizedCaption = String(caption || "").trim();
+        if (normalizedCaption || sourceType === "media_preview") {
+          if (!figcaption) {
+            figcaption = document.createElement("figcaption");
+            figure.append(figcaption);
+          }
+          figcaption.textContent = normalizedCaption || "图片来源：媒体公开页面";
+        } else if (figcaption) {
+          figcaption.remove();
+        }
+      }
+
+      function clearPreviewImage(draftCard, slotId) {
+        const figure = draftCard.querySelector(`.wechat-preview .wechat-article-image[data-slot-id="${CSS.escape(slotId)}"]`);
+        if (figure) figure.remove();
+        if (slotId === "cover") {
+          const coverImg = draftCard.querySelector(".draft-cover img");
+          if (coverImg) {
+            coverImg.removeAttribute("src");
+            coverImg.removeAttribute("data-full-src");
+          }
+        }
+      }
+
+      function updateSlotCaptionInUi(draftCard, slotId, selectedImage, fallbackCaption = "") {
+        const slot = draftCard.querySelector(`.image-slot[data-slot-id="${CSS.escape(slotId)}"]`);
+        if (!slot) return;
+        const imageUrl = selectedImage?.url || "";
+        const caption = selectedImage?.caption ?? fallbackCaption;
+        let selectedCard = null;
+        slot.querySelectorAll(".image-candidate-card").forEach((card) => {
+          if (!imageUrl || card.dataset.imageUrl === imageUrl) {
+            card.dataset.caption = caption || "";
+            if (card.classList.contains("is-selected")) {
+              selectedCard = card;
+              const input = card.querySelector(".slot-image-caption-input");
+              if (input) input.value = caption || "";
+            }
+          }
+        });
+        if (selectedCard) {
+          updatePreviewImage(
+            draftCard,
+            slotId,
+            imageUrl || selectedCard.dataset.imageUrl,
+            selectedImage?.type || selectedImage?.source_type || selectedCard.dataset.sourceType || "image",
+            caption || ""
+          );
+        }
+      }
+
+      function clearSlotSelectionInUi(draftCard, slotId) {
+        const slot = draftCard.querySelector(`.image-slot[data-slot-id="${CSS.escape(slotId)}"]`);
+        if (slot) {
+          slot.querySelectorAll(".image-candidate-card").forEach((card) => {
+            card.classList.remove("is-selected");
+            const action = card.querySelector(".candidate-action");
+            if (action) {
+              action.innerHTML = candidateActionHtml(draftCard.dataset.index, slotId, card.dataset.imageUrl, card.dataset.publishable === "true", false);
+            }
+            syncCaptionEditorForCard(card, false, draftCard.dataset.index, slotId);
+          });
+        }
+        clearPreviewImage(draftCard, slotId);
+      }
+
+      function appendGeneratedCandidate(draftCard, slotId, image) {
+        appendImageCandidate(draftCard, slotId, image, slotId === "cover" ? "generated_cover" : "generated_section");
+      }
+
+      function appendImportedCandidate(draftCard, slotId, image) {
+        appendImageCandidate(draftCard, slotId, image, "manual_upload");
+      }
+
+      function appendOfficialScreenshotCandidate(draftCard, slotId, image) {
+        appendImageCandidate(draftCard, slotId, image, "official_screenshot");
+      }
+
+      function appendOfficialScreenshotCandidates(draftCard, slotId, images, selectedUrl) {
+        [...(images || [])].reverse().forEach((image) => {
+          appendImageCandidate(draftCard, slotId, image, "official_screenshot", (image.url || image.image_url) === selectedUrl);
+        });
+        if (selectedUrl) {
+          updateSlotSelection(draftCard, slotId, selectedUrl, "official_screenshot", true);
+        }
+      }
+
+      function appendImageCandidate(draftCard, slotId, image, sourceType, selected = true) {
+        const slot = draftCard.querySelector(`.image-slot[data-slot-id="${CSS.escape(slotId)}"]`);
+        if (!slot) return;
+        const grid = slot.querySelector(".image-candidate-grid");
+        if (!grid) return;
+        const imageUrl = image.image_url || image.url;
+        const card = document.createElement("article");
+        card.className = `image-candidate-card${selected ? " is-selected" : ""}`;
+        card.dataset.slotId = slotId;
+        card.dataset.imageUrl = imageUrl;
+        card.dataset.publishable = "true";
+        card.dataset.sourceType = sourceType;
+        card.dataset.caption = image.caption || "";
+        const actionHtml = candidateActionHtml(draftCard.dataset.index, slotId, imageUrl, true, selected);
+        card.innerHTML = `
+          <button class="image-zoom-button" type="button" data-full-src="${escapeHtml(imageUrl)}">
+            <img src="${escapeHtml(imageUrl)}" alt="">
+          </button>
+          <div class="candidate-meta">
+            <span>${imageTypeLabel(sourceType)}</span>
+            <span class="candidate-action">${actionHtml}</span>
+          </div>
+        `;
+        syncCaptionEditorForCard(card, selected, draftCard.dataset.index, slotId);
+        grid.prepend(card);
+        if (selected) {
+          updateSlotSelection(draftCard, slotId, imageUrl, sourceType, true);
+        }
+      }
+
+      async function writeWechatHtmlToClipboard(html, plainText) {
+        if (navigator.clipboard && window.ClipboardItem) {
+          const item = new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([plainText || ""], { type: "text/plain" })
+          });
+          await navigator.clipboard.write([item]);
+          return true;
+        }
+        return false;
+      }
+
+      function openCopyFallback(html) {
+        copyFallback.hidden = false;
+        copyFallbackContent.innerHTML = html;
+        const range = document.createRange();
+        range.selectNodeContents(copyFallbackContent);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        copyFallbackContent.focus();
+      }
+
+      function openHeyboxAutomationDialog() {
+        heyboxAutomationDialog.hidden = false;
+      }
+
+      function renderHeyboxAutomation(session) {
+        if (!session) return;
+        const status = session.status || "unknown";
+        const message = session.message || "等待小黑盒半自动导入状态。";
+        heyboxAutomationMessage.textContent = `[${status}] ${message}`;
+        heyboxAutomationLogs.textContent = (session.logs || []).join("\n");
+        heyboxAutomationContinue.disabled = status !== "waiting_user";
+        heyboxAutomationStop.disabled = ["idle", "completed", "error", "stopped"].includes(status);
+        if (session.last_screenshot_url) {
+          heyboxAutomationScreen.src = session.last_screenshot_url;
+          heyboxAutomationScreen.hidden = false;
+          heyboxAutomationEmpty.hidden = true;
+        } else if (!session.browser_view_available) {
+          heyboxAutomationScreen.hidden = true;
+          heyboxAutomationEmpty.hidden = false;
+        }
+      }
+
+      async function refreshHeyboxAutomationScreenshot() {
+        try {
+          const payload = await callApi("/api/heybox/automation/screenshot");
+          if (payload.screenshot_url) {
+            heyboxAutomationScreen.src = payload.screenshot_url;
+            heyboxAutomationScreen.hidden = false;
+            heyboxAutomationEmpty.hidden = true;
+          }
+          renderHeyboxAutomation(payload.session || payload.heybox_automation || {});
+        } catch (error) {
+          if (!heyboxAutomationScreen.src) {
+            heyboxAutomationScreen.hidden = true;
+            heyboxAutomationEmpty.hidden = false;
+          }
+        }
+      }
+
+      async function refreshHeyboxAutomationStatus(openDialog = false) {
+        const payload = await callApi("/api/heybox/automation/status");
+        const session = payload.heybox_automation || {};
+        renderHeyboxAutomation(session);
+        if (session.browser_view_available) {
+          await refreshHeyboxAutomationScreenshot();
+        }
+        if (openDialog || !["idle", "completed", "error", "stopped"].includes(session.status)) {
+          openHeyboxAutomationDialog();
+        }
+        if (!["idle", "waiting_review", "completed", "error", "stopped"].includes(session.status)) {
+          if (!heyboxAutomationTimer) {
+            heyboxAutomationTimer = window.setInterval(() => {
+              refreshHeyboxAutomationStatus(false).catch(() => {});
+            }, 1600);
+          }
+        } else if (heyboxAutomationTimer) {
+          window.clearInterval(heyboxAutomationTimer);
+          heyboxAutomationTimer = null;
+        }
+      }
+
+      document.querySelectorAll(".step-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".step-tab").forEach((item) => item.classList.remove("is-active"));
+          document.querySelectorAll(".panel").forEach((panel) => panel.classList.remove("is-active"));
+          tab.classList.add("is-active");
+          document.querySelector(`#${tab.dataset.panel}`).classList.add("is-active");
+          const drawerLabel = document.querySelector("#workflowDrawerLabel");
+          const drawer = document.querySelector(".workflow-drawer");
+          if (drawerLabel) drawerLabel.textContent = tab.querySelector("span")?.textContent || "";
+          if (drawer) drawer.open = false;
+        });
+      });
+
+      document.querySelectorAll(".filter-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          document.querySelectorAll(".filter-chip").forEach((item) => item.classList.remove("is-active"));
+          chip.classList.add("is-active");
+          const category = chip.dataset.category;
+          document.querySelectorAll(".news-card").forEach((card) => {
+            card.hidden = category !== "all" && card.dataset.category !== category;
+          });
+        });
+      });
+
+      document.querySelectorAll(".draft-page-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const draftIndex = tab.dataset.draftIndex;
+          document.querySelectorAll(".draft-page-tab").forEach((item) => item.classList.remove("is-active"));
+          document.querySelectorAll(".draft-card").forEach((card) => {
+            card.classList.toggle("is-active", card.dataset.index === draftIndex);
+          });
+          tab.classList.add("is-active");
+        });
+      });
+
+      document.querySelectorAll(".record-date-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const date = tab.dataset.recordDate;
+          document.querySelectorAll(".record-date-tab").forEach((item) => item.classList.remove("is-active"));
+          document.querySelectorAll(".record-card").forEach((card) => {
+            card.hidden = card.dataset.recordDate !== date;
+          });
+          tab.classList.add("is-active");
+        });
+      });
+
+      document.querySelector(".draft-list")?.addEventListener("click", (event) => {
+        const slotTab = event.target.closest(".image-slot-tab");
+        if (!slotTab) return;
+        const draftCard = slotTab.closest(".draft-card");
+        const slotId = slotTab.dataset.slotId;
+        draftCard.querySelectorAll(".image-slot-tab").forEach((item) => item.classList.remove("is-active"));
+        draftCard.querySelectorAll(".image-slot").forEach((slot) => {
+          slot.classList.toggle("is-active", slot.dataset.slotId === slotId);
+        });
+        slotTab.classList.add("is-active");
+      });
+
+      const keywordEditor = document.querySelector("#collectKeywordEditor");
+      const keywordInput = document.querySelector("#collectKeywordInput");
+      const keywordAddButton = document.querySelector("#collectKeywordAdd");
+      const keywordList = document.querySelector("#collectKeywordList");
+      let collectKeywords = parseInitialKeywords();
+
+      function parseInitialKeywords() {
+        try {
+          const raw = JSON.parse(keywordEditor?.dataset.keywords || "[]");
+          return normalizeKeywordList(Array.isArray(raw) ? raw : []);
+        } catch (error) {
+          return [];
+        }
+      }
+
+      function normalizeKeyword(value) {
+        return String(value || "").trim().replace(/\s+/g, " ");
+      }
+
+      function normalizeKeywordList(items) {
+        const seen = new Set();
+        const results = [];
+        items.forEach((item) => {
+          const keyword = normalizeKeyword(item);
+          const key = keyword.toLowerCase();
+          if (!keyword || seen.has(key)) return;
+          seen.add(key);
+          results.push(keyword);
+        });
+        return results;
+      }
+
+      function renderCollectKeywords() {
+        if (!keywordList) return;
+        if (!collectKeywords.length) {
+          keywordList.innerHTML = '<span class="keyword-empty">还没有关键词</span>';
+          return;
+        }
+        keywordList.innerHTML = collectKeywords.map((keyword, index) => `
+          <span class="keyword-token">
+            <span>${escapeHtml(keyword)}</span>
+            <button class="keyword-remove" type="button" data-index="${index}" aria-label="删除 ${escapeHtml(keyword)}">×</button>
+          </span>
+        `).join("");
+      }
+
+      function addCollectKeyword() {
+        const keyword = normalizeKeyword(keywordInput?.value || "");
+        if (!keyword) return;
+        collectKeywords = normalizeKeywordList([...collectKeywords, keyword]);
+        if (keywordInput) keywordInput.value = "";
+        renderCollectKeywords();
+      }
+
+      function setCollectKeywords(items) {
+        collectKeywords = normalizeKeywordList(items || []);
+        renderCollectKeywords();
+      }
+
+      function collectProfilePayload() {
+        const sourcePackages = Array.from(document.querySelectorAll('input[name="sourcePackage"]:checked')).map((node) => node.value);
+        const searchEngines = Array.from(document.querySelectorAll('input[name="searchEngine"]:checked')).map((node) => node.value);
+        return {
+          keywords: collectKeywords,
+          source_packages: sourcePackages,
+          search_engines: searchEngines
+        };
+      }
+
+      const draftTopicPicker = document.querySelector("#draftTopicPicker");
+      const draftTopicSelected = document.querySelector("#draftTopicSelected");
+      const draftTopicSelect = document.querySelector("#draftTopicSelect");
+      const draftTopicAdd = document.querySelector("#draftTopicAdd");
+      const draftTopicFill = document.querySelector("#draftTopicFill");
+      const draftTopicCount = document.querySelector("#draftTopicCount");
+      let draftTopics = parseDraftTopics();
+      let selectedDraftTopicIds = parseInitialDraftTopicIds();
+
+      function parseJsonDataset(node, key, fallback = []) {
+        try {
+          const value = JSON.parse(node?.dataset[key] || "null");
+          return Array.isArray(value) ? value : fallback;
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function parseDraftTopics() {
+        return parseJsonDataset(draftTopicPicker, "topics", []).filter((topic) => topic && topic.id);
+      }
+
+      function parseInitialDraftTopicIds() {
+        const draftIds = parseJsonDataset(draftTopicPicker, "draftTopicIds", []).filter(Boolean);
+        const defaultIds = parseJsonDataset(draftTopicPicker, "defaultTopicIds", []).filter(Boolean);
+        const normalizedDraftIds = normalizeTopicIds(draftIds);
+        const normalizedDefaultIds = normalizeTopicIds(defaultIds);
+        return fillInitialDraftTopicIds(normalizedDraftIds, normalizedDefaultIds);
+      }
+
+      function fillInitialDraftTopicIds(primaryIds, fallbackIds, targetCount = 3) {
+        const selected = normalizeTopicIds(primaryIds);
+        if (selected.length >= targetCount) return selected;
+        return normalizeTopicIds([...selected, ...(fallbackIds || [])]).slice(0, Math.min(targetCount, draftTopics.length));
+      }
+
+      function normalizeTopicIds(ids) {
+        const validIds = new Set(draftTopics.map((topic) => String(topic.id)));
+        const seen = new Set();
+        const results = [];
+        (ids || []).forEach((rawId) => {
+          const id = String(rawId || "").trim();
+          if (!id || !validIds.has(id) || seen.has(id)) return;
+          seen.add(id);
+          results.push(id);
+        });
+        return results;
+      }
+
+      function topicById(topicId) {
+        return draftTopics.find((topic) => String(topic.id) === String(topicId));
+      }
+
+      function renderDraftTopicPicker() {
+        if (!draftTopicPicker || !draftTopicSelected) return;
+        if (draftTopicCount) {
+          draftTopicCount.textContent = selectedDraftTopicIds.length ? `将生成 ${selectedDraftTopicIds.length} 篇` : "未选择";
+        }
+        if (!selectedDraftTopicIds.length) {
+          draftTopicSelected.innerHTML = '<p class="muted">还没有选择选题。</p>';
+        } else {
+          draftTopicSelected.innerHTML = selectedDraftTopicIds.map((topicId, index) => {
+            const topic = topicById(topicId) || {};
+            const themes = Array.isArray(topic.themes) ? topic.themes.slice(0, 3).join(" / ") : "";
+            return `
+              <article class="draft-topic-item" data-topic-id="${escapeHtml(topicId)}">
+                <div>
+                  <strong>${index + 1}. ${escapeHtml(topic.title || "未命名选题")}</strong>
+                  <p>${escapeHtml(topic.angle || "")}</p>
+                  ${themes ? `<em>${escapeHtml(themes)}</em>` : ""}
+                </div>
+                <button class="mini-button danger-mini draft-topic-remove" type="button" data-topic-id="${escapeHtml(topicId)}">移除</button>
+              </article>
+            `;
+          }).join("");
+        }
+        if (draftTopicSelect) {
+          draftTopicSelect.querySelectorAll("option").forEach((option) => {
+            option.disabled = selectedDraftTopicIds.includes(option.value);
+          });
+        }
+        if (draftTopicFill) {
+          draftTopicFill.disabled = selectedDraftTopicIds.length >= Math.min(3, draftTopics.length);
+        }
+      }
+
+      function addSelectedDraftTopic() {
+        const topicId = draftTopicSelect?.value || "";
+        if (!topicId || selectedDraftTopicIds.includes(topicId)) return;
+        selectedDraftTopicIds = normalizeTopicIds([...selectedDraftTopicIds, topicId]);
+        renderDraftTopicPicker();
+      }
+
+      function fillSelectedDraftTopics() {
+        const defaultIds = parseJsonDataset(draftTopicPicker, "defaultTopicIds", []).filter(Boolean);
+        const allIds = draftTopics.map((topic) => String(topic.id));
+        selectedDraftTopicIds = fillInitialDraftTopicIds(selectedDraftTopicIds, [...defaultIds, ...allIds]);
+        renderDraftTopicPicker();
+      }
+
+      function draftGenerationPayload() {
+        return { topic_ids: selectedDraftTopicIds };
+      }
+
+      keywordAddButton?.addEventListener("click", addCollectKeyword);
+      keywordInput?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        addCollectKeyword();
+      });
+      keywordList?.addEventListener("click", (event) => {
+        const button = event.target.closest(".keyword-remove");
+        if (!button) return;
+        const index = Number(button.dataset.index);
+        if (!Number.isInteger(index) || index < 0) return;
+        collectKeywords = collectKeywords.filter((keyword, keywordIndex) => keywordIndex !== index);
+        renderCollectKeywords();
+      });
+      renderCollectKeywords();
+
+      draftTopicAdd?.addEventListener("click", addSelectedDraftTopic);
+      draftTopicFill?.addEventListener("click", fillSelectedDraftTopics);
+      draftTopicSelect?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        addSelectedDraftTopic();
+      });
+      draftTopicSelected?.addEventListener("click", (event) => {
+        const button = event.target.closest(".draft-topic-remove");
+        if (!button) return;
+        const topicId = button.dataset.topicId;
+        selectedDraftTopicIds = selectedDraftTopicIds.filter((id) => id !== topicId);
+        renderDraftTopicPicker();
+      });
+      renderDraftTopicPicker();
+
+      document.querySelectorAll(".collect-preset").forEach((button) => {
+        button.addEventListener("click", () => {
+          const preset = JSON.parse(button.dataset.preset || "{}");
+          setCollectKeywords(preset.keywords || []);
+          document.querySelectorAll('input[name="sourcePackage"]').forEach((node) => {
+            node.checked = (preset.source_packages || []).includes(node.value);
+          });
+          document.querySelectorAll('input[name="searchEngine"]').forEach((node) => {
+            node.checked = (preset.search_engines || []).includes(node.value);
+          });
+        });
+      });
+
+      document.querySelector("#collectButton")?.addEventListener("click", (event) => {
+        runAction(event.currentTarget, "采集", "/api/collect", {
+          method: "POST",
+          body: JSON.stringify(collectProfilePayload())
+        });
+      });
+
+      document.querySelector("#topicsButton")?.addEventListener("click", (event) => {
+        runAction(event.currentTarget, "生成选题", "/api/topics/generate", { method: "POST" });
+      });
+
+      document.querySelector("#manualTopicAdd")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        try {
+          await runInlineAction(button, "加入选题", "/api/topics", {
+            method: "POST",
+            body: JSON.stringify(manualTopicPayload())
+          });
+          window.setTimeout(() => window.location.reload(), 700);
+        } catch (error) {
+          return;
+        }
+      });
+
+      document.querySelectorAll(".topic-save").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const card = event.currentTarget.closest(".topic-card");
+          const topicId = event.currentTarget.dataset.topicId;
+          if (!card || !topicId) return;
+          try {
+            await runInlineAction(event.currentTarget, "保存选题", `/api/topics/${encodeURIComponent(topicId)}`, {
+              method: "PUT",
+              body: JSON.stringify(topicPayloadFromCard(card))
+            });
+            window.setTimeout(() => window.location.reload(), 700);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".topic-delete").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const topicId = event.currentTarget.dataset.topicId;
+          if (!topicId) return;
+          const confirmed = window.confirm("删除这个选题后，旧草稿会被清空，需要按剩余选题重新生成草稿。确认删除？");
+          if (!confirmed) return;
+          try {
+            await runInlineAction(event.currentTarget, "删除选题", `/api/topics/${encodeURIComponent(topicId)}`, {
+              method: "DELETE"
+            });
+            window.setTimeout(() => window.location.reload(), 700);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelector("#draftsButton")?.addEventListener("click", (event) => {
+        const button = event.currentTarget;
+        if (!selectedDraftTopicIds.length) {
+          showNotice("请至少选择一个选题后再生成草稿。", "error");
+          showResultDialog("未选择选题", "请在“本次生成要用的选题”里加入至少一个选题。", "error");
+          return;
+        }
+        const label = button.dataset.hasDrafts === "true" ? "重新生成草稿" : "生成草稿";
+        if (button.dataset.hasDrafts === "true") {
+          const confirmed = window.confirm("将按当前选中的选题重新生成一批新草稿，并覆盖现有草稿文本和配图选择。确认继续？");
+          if (!confirmed) return;
+        }
+        runAction(button, label, "/api/drafts/generate", {
+          method: "POST",
+          body: JSON.stringify(draftGenerationPayload())
+        });
+      });
+
+      document.querySelector("#coversButton")?.addEventListener("click", (event) => {
+        runAction(event.currentTarget, "生成配图", "/api/drafts/generate-covers", { method: "POST" });
+      });
+
+      document.querySelector("#databaseBackfillButton")?.addEventListener("click", (event) => {
+        runAction(event.currentTarget, "同步数据库", "/api/database/backfill", { method: "POST" });
+      });
+
+      document.querySelector("#serverStatusButton")?.addEventListener("click", async (event) => {
+        const payload = await runInlineAction(event.currentTarget, "检测端口", "/api/server/status");
+        const server = payload.server || {};
+        document.querySelector("#serverPort").textContent = server.port || "-";
+        document.querySelector("#serverHost").textContent = server.host || "-";
+        document.querySelector("#serverScheme").textContent = server.scheme || "-";
+        document.querySelector("#serverPublicIp").textContent = server.public_ip || "检测失败";
+        document.querySelector("#serverBaseUrl").textContent = `访问地址：${server.base_url || "-"}`;
+        document.querySelector("#serverCallbackUrl").textContent = `抖音回调：${server.douyin_callback_url || "-"}`;
+        const copyTextValue = [
+          `当前公网 IP：${server.public_ip || "检测失败"}`,
+          `当前端口：${server.port || "-"}`,
+          `当前主机：${server.host || "-"}`,
+          `访问地址：${server.base_url || "-"}`,
+          `抖音回调地址：${server.douyin_callback_url || "-"}`,
+          server.note || ""
+        ].join("\n");
+        document.querySelector("#serverStatus").dataset.copy = copyTextValue;
+      });
+
+      document.querySelector("#copyServerStatusButton")?.addEventListener("click", async () => {
+        const value = document.querySelector("#serverStatus")?.dataset.copy || "";
+        if (!value) {
+          showResultDialog("还没有端口信息", "请先点击“检测端口”。", "error");
+          return;
+        }
+        await copyText(value, "端口和地址信息已复制。");
+      });
+
+      document.querySelector("#wechatStatusButton")?.addEventListener("click", async (event) => {
+        const payload = await runInlineAction(event.currentTarget, "检测微信配置", "/api/wechat/status?check=1");
+        const wechat = payload.wechat || {};
+        const test = wechat.access_token_test || {};
+        document.querySelector("#wechatAppId").textContent = wechat.app_id_preview || (wechat.app_id_set ? "已配置" : "未配置");
+        document.querySelector("#wechatSecretLength").textContent = wechat.app_secret_set ? `${wechat.app_secret_length || 0} 位` : "未配置";
+        document.querySelector("#wechatTokenResult").textContent = test.ok ? "通过" : "失败";
+        document.querySelector("#wechatStatusMessage").textContent = test.message || "未执行 access_token 测试。";
+      });
+
+      document.querySelector("#opinionCollectButton")?.addEventListener("click", (event) => {
+        const payload = {
+          platform: document.querySelector("#opinionPlatform")?.value || "douyin",
+          query: document.querySelector("#opinionQuery")?.value || "",
+          limit: 10
+        };
+        runAction(event.currentTarget, "采集评论", "/api/opinions/collect", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+      });
+
+      document.querySelector("#opinionConfigButton")?.addEventListener("click", async (event) => {
+        const platform = document.querySelector("#opinionPlatform")?.value || "douyin";
+        await runInlineAction(event.currentTarget, "检测配置", `/api/opinions/config?platform=${encodeURIComponent(platform)}`);
+      });
+
+      document.querySelector("#douyinAuthStatusButton")?.addEventListener("click", async (event) => {
+        await runInlineAction(event.currentTarget, "授权状态", "/api/douyin/auth/status");
+      });
+
+      document.querySelector("#douyinAuthUrlButton")?.addEventListener("click", async (event) => {
+        const payload = await runInlineAction(event.currentTarget, "生成授权链接", "/api/douyin/auth/url");
+        const url = payload.douyin_auth?.authorize_url;
+        if (url) {
+          window.open(url, "_blank", "noopener,noreferrer");
+          showResultDialog("抖音授权链接", url, "success");
+        }
+      });
+
+      document.querySelector("#douyinAuthExchangeButton")?.addEventListener("click", async (event) => {
+        const code = document.querySelector("#douyinAuthCode")?.value || "";
+        await runInlineAction(event.currentTarget, "保存授权", "/api/douyin/auth/exchange", {
+          method: "POST",
+          body: JSON.stringify({ code })
+        });
+      });
+
+      document.querySelector("#douyinAuthRefreshButton")?.addEventListener("click", async (event) => {
+        await runInlineAction(event.currentTarget, "刷新Token", "/api/douyin/auth/refresh", { method: "POST" });
+      });
+
+      document.querySelector("#manualOpinionButton")?.addEventListener("click", (event) => {
+        const payload = {
+          platform: "manual",
+          topic: document.querySelector("#manualOpinionTopic")?.value || "",
+          text: document.querySelector("#manualOpinionText")?.value || ""
+        };
+        runAction(event.currentTarget, "导入评论", "/api/opinions/import-text", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+      });
+
+      document.querySelector("#opinionScreenshotDraft")?.addEventListener("change", (event) => {
+        const selected = event.currentTarget.selectedOptions?.[0];
+        const topicInput = document.querySelector("#opinionScreenshotTopic");
+        if (topicInput && selected?.dataset.draftTitle) {
+          topicInput.value = selected.dataset.draftTitle;
+        }
+      });
+
+      document.querySelector("#opinionScreenshotButton")?.addEventListener("click", async (event) => {
+        const draftSelect = document.querySelector("#opinionScreenshotDraft");
+        const selectedDraft = draftSelect?.selectedOptions?.[0];
+        const fileInput = document.querySelector("#opinionScreenshotFile");
+        if (!draftSelect?.value) {
+          showNotice("请先选择这张截图对应的草稿。", "error");
+          showResultDialog("导入截图失败", "请先选择这张截图对应的草稿，再导入舆论截图。", "error");
+          return;
+        }
+        if (!fileInput?.files?.[0]) {
+          showNotice("请选择要导入的评论截图。", "error");
+          showResultDialog("导入截图失败", "请选择要导入的评论截图。", "error");
+          return;
+        }
+        const formData = new FormData();
+        formData.append("topic", document.querySelector("#opinionScreenshotTopic")?.value || selectedDraft?.dataset.draftTitle || "");
+        formData.append("platform", "manual");
+        formData.append("note", document.querySelector("#opinionScreenshotNote")?.value || "");
+        formData.append("draft_index", draftSelect.value);
+        formData.append("draft_id", selectedDraft?.dataset.draftId || "");
+        formData.append("topic_id", selectedDraft?.dataset.topicId || "");
+        formData.append("draft_title", selectedDraft?.dataset.draftTitle || "");
+        formData.append("image", fileInput.files[0]);
+        await runAction(event.currentTarget, "导入并生成点评", "/api/opinions/import-screenshot", {
+          method: "POST",
+          body: formData
+        });
+      });
+
+      document.querySelectorAll(".item-delete").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          runAction(event.currentTarget, "删除新闻", `/api/items/${event.currentTarget.dataset.itemId}`, { method: "DELETE" });
+        });
+      });
+
+      document.querySelectorAll(".image-delete").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          runAction(event.currentTarget, "删除图片", `/api/items/${event.currentTarget.dataset.itemId}/images`, {
+            method: "DELETE",
+            body: JSON.stringify({ image: event.currentTarget.dataset.image })
+          });
+        });
+      });
+
+      document.querySelectorAll(".draft-delete").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          runAction(event.currentTarget, "删除草稿", `/api/drafts/${event.currentTarget.dataset.draftIndex}`, { method: "DELETE" });
+        });
+      });
+
+      document.querySelectorAll(".draft-regenerate").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const confirmed = window.confirm("将只重新生成这篇文章的标题和正文，当前配图候选和已选图片会尽量保留。确认继续？");
+          if (!confirmed) return;
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          await runAction(event.currentTarget, "重新生成文本", `/api/drafts/${draftIndex}/regenerate`, { method: "POST" });
+        });
+      });
+
+      document.querySelectorAll(".draft-rewrite-title").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          const draftCard = event.currentTarget.closest(".draft-card");
+          try {
+            const payload = await runInlineAction(event.currentTarget, "重写标题", `/api/drafts/${draftIndex}/rewrite-title`, {
+              method: "POST"
+            });
+            updateTitleChoiceControls(draftCard, payload);
+            await refreshVariantPreviewForDraft(draftCard);
+            const candidates = (payload.display_candidates || payload.candidates || []).map((item, index) => `${index + 1}. ${item}`).join("\n");
+            const resultTitle = payload.display_title || payload.title;
+            showResultDialog("标题已重写", candidates ? `当前标题：${resultTitle}\n\n候选标题已同步到下拉框：\n${candidates}` : `当前标题：${resultTitle}`, "success");
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".title-candidate-select").forEach((select) => {
+        select.addEventListener("change", (event) => {
+          const panel = event.currentTarget.closest(".title-choice-panel");
+          const input = panel?.querySelector(".title-choice-input");
+          if (input) input.value = event.currentTarget.value || "";
+        });
+      });
+
+      document.querySelectorAll(".title-choice-apply").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          const draftCard = event.currentTarget.closest(".draft-card");
+          const panel = event.currentTarget.closest(".title-choice-panel");
+          const title = panel?.querySelector(".title-choice-input")?.value || panel?.querySelector(".title-candidate-select")?.value || "";
+          const subtitle = draftCard?.querySelector(".draft-subtitle-input")?.value || "";
+          try {
+            const payload = await runInlineAction(event.currentTarget, "应用标题", `/api/drafts/${draftIndex}/title-choice`, {
+              method: "POST",
+              body: JSON.stringify({ title, subtitle })
+            });
+            updateTitleChoiceControls(draftCard, payload);
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".cover-delete").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          runAction(event.currentTarget, "删除封面", `/api/drafts/${event.currentTarget.dataset.draftIndex}/cover`, { method: "DELETE" });
+        });
+      });
+
+      document.querySelectorAll(".publish-record").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          runAction(event.currentTarget, "发布备案", `/api/drafts/${event.currentTarget.dataset.draftIndex}/publish-record`, {
+            method: "POST",
+            body: JSON.stringify({ channel: "manual", note: "手动标记为已发布" })
+          });
+        });
+      });
+
+      document.querySelectorAll(".draft-save").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftCard = event.currentTarget.closest(".draft-card");
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          const editor = draftCard.querySelector(".draft-editor");
+          const variant = editor?.dataset.variant || draftCard.querySelector(".variant-preview-section")?.dataset.activeVariant || "long";
+          const payload = {
+            variant,
+            title: draftCard.querySelector(".draft-title-input")?.value || "",
+            subtitle: draftCard.querySelector(".draft-subtitle-input")?.value || "",
+            body_markdown: draftCard.querySelector(".draft-body-input")?.value || ""
+          };
+          try {
+            await runInlineAction(event.currentTarget, `保存${variantLabel(variant)}`, `/api/drafts/${draftIndex}`, {
+              method: "PUT",
+              body: JSON.stringify(payload)
+            });
+            const preview = await loadVariantPreviews(draftCard, draftIndex, variant, { silent: true });
+            const current = preview?.variants?.[variant];
+            if (current) setDraftEditorVariant(draftCard, variant, current);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".draft-export-wechat").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          try {
+            const payload = await runInlineAction(event.currentTarget, "导出", `/api/drafts/${draftIndex}/export-wechat`, {
+              method: "POST"
+            });
+            if (payload.export?.html_url) {
+              window.open(payload.export.html_url, "_blank", "noopener");
+            }
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".draft-copy-wechat").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          const button = event.currentTarget;
+          const oldText = button.textContent;
+          button.disabled = true;
+          button.textContent = "复制中...";
+          try {
+            const payload = await callApi(`/api/drafts/${draftIndex}/copy-wechat`, {
+              method: "POST"
+            });
+            const clipboard = payload.clipboard || {};
+            const copied = await writeWechatHtmlToClipboard(clipboard.html || "", clipboard.plain_text || "");
+            if (copied) {
+              showNotice("已复制公众号富文本，到公众号后台正文编辑区粘贴即可。", "success");
+              showResultDialog("复制成功", "已复制公众号富文本，到公众号后台正文编辑区粘贴即可。", "success");
+            } else {
+              openCopyFallback(clipboard.html || "");
+              showNotice("当前浏览器不支持自动写入富文本剪贴板，请在弹出的复制区 Ctrl+C。", "error");
+              showResultDialog("需要手动复制", "当前浏览器不支持自动写入富文本剪贴板，请在弹出的复制区 Ctrl+C。", "error");
+            }
+          } catch (error) {
+            showNotice(error.message || "复制失败", "error");
+            showResultDialog("复制失败", error.message || "复制失败", "error");
+          } finally {
+            button.textContent = oldText;
+            button.disabled = false;
+          }
+        });
+      });
+
+      document.querySelectorAll(".variant-load").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftCard = event.currentTarget.closest(".draft-card");
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          try {
+            await loadVariantPreviews(draftCard, draftIndex);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".variant-tab").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const section = event.currentTarget.closest(".variant-preview-section");
+          const draftCard = event.currentTarget.closest(".draft-card");
+          const variant = event.currentTarget.dataset.variant || "long";
+          const draftIndex = section?.dataset.draftIndex;
+          if (!section.__variantPreview && draftIndex) {
+            try {
+              await loadVariantPreviews(draftCard, draftIndex, variant, { silent: true });
+            } catch (error) {
+              return;
+            }
+            return;
+          }
+          renderVariantPreview(section, variant);
+        });
+      });
+
+      document.querySelectorAll(".variant-select").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const button = event.currentTarget;
+          const section = button.closest(".variant-preview-section");
+          const draftCard = button.closest(".draft-card");
+          const draftIndex = section?.dataset.draftIndex;
+          const variant = button.dataset.variant || "long";
+          if (!draftIndex) return;
+          if (!section.__variantPreview) {
+            try {
+              await loadVariantPreviews(draftCard, draftIndex, variant, { silent: true });
+            } catch (error) {
+              return;
+            }
+          }
+          try {
+            const payload = await runInlineAction(button, "选择文章版本", `/api/drafts/${draftIndex}/platform-choice`, {
+              method: "POST",
+              body: JSON.stringify({ platform: "article", variant })
+            });
+            const choice = payload.choice || {};
+            const selectedVariant = choice.variant || variant;
+            updateVariantSelection(section, selectedVariant);
+            renderVariantPreview(section, selectedVariant);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".draft-export-heybox").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          try {
+            const payload = await runInlineAction(event.currentTarget, "导出小黑盒", `/api/drafts/${draftIndex}/export-heybox`, {
+              method: "POST"
+            });
+            if (payload.export?.html_url) {
+              window.open(payload.export.html_url, "_blank", "noopener");
+            }
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".draft-regenerate-heybox").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          const draftCard = event.currentTarget.closest(".draft-card");
+          try {
+            await runInlineAction(event.currentTarget, "重写短文版", `/api/drafts/${draftIndex}/regenerate-heybox`, {
+              method: "POST"
+            });
+            await loadVariantPreviews(draftCard, draftIndex, "short", { silent: true });
+            showResultDialog("短文版已生成", "已刷新下方短文版富文本预览，可以和长文版对比后选择当前文章版本。", "success");
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      document.querySelectorAll(".draft-copy-heybox").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          const button = event.currentTarget;
+          const oldText = button.textContent;
+          button.disabled = true;
+          button.textContent = "复制中...";
+          try {
+            const payload = await callApi(`/api/drafts/${draftIndex}/copy-heybox`, {
+              method: "POST"
+            });
+            const clipboard = payload.clipboard || {};
+            const copied = await writeWechatHtmlToClipboard(clipboard.html || "", clipboard.plain_text || "");
+            if (copied) {
+              const message = "已复制小黑盒富文本，请到小黑盒创作者后台正文编辑区粘贴。";
+              showNotice(message, "success");
+              showResultDialog("复制成功", message, "success");
+              if (clipboard.creator_url) {
+                window.open(clipboard.creator_url, "_blank", "noopener");
+              }
+            } else {
+              openCopyFallback(clipboard.html || "");
+              showNotice("当前浏览器不支持自动写入富文本剪贴板，请在弹出的复制区 Ctrl+C。", "error");
+              showResultDialog("需要手动复制", "当前浏览器不支持自动写入富文本剪贴板，请在弹出的复制区 Ctrl+C。", "error");
+            }
+          } catch (error) {
+            showNotice(error.message || "复制失败", "error");
+            showResultDialog("复制失败", error.message || "复制失败", "error");
+          } finally {
+            button.textContent = oldText;
+            button.disabled = false;
+          }
+        });
+      });
+
+      document.querySelectorAll(".draft-automate-heybox").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const confirmed = window.confirm("将打开一个可见浏览器，尝试把标题、正文和图片导入小黑盒编辑器；不会自动发布。确认继续？");
+          if (!confirmed) return;
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          try {
+            const payload = await runInlineAction(event.currentTarget, "启动小黑盒导入", `/api/drafts/${draftIndex}/automate-heybox`, {
+              method: "POST"
+            });
+            renderHeyboxAutomation(payload.heybox_automation || {});
+            openHeyboxAutomationDialog();
+            await refreshHeyboxAutomationStatus(false);
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      heyboxAutomationContinue?.addEventListener("click", async () => {
+        try {
+          const payload = await callApi("/api/heybox/automation/continue", { method: "POST" });
+          renderHeyboxAutomation(payload.heybox_automation || {});
+          await refreshHeyboxAutomationStatus(false);
+        } catch (error) {
+          showNotice(error.message || "继续小黑盒导入失败", "error");
+          showResultDialog("继续失败", error.message || "继续小黑盒导入失败", "error");
+        }
+      });
+
+      heyboxAutomationStop?.addEventListener("click", async () => {
+        try {
+          const payload = await callApi("/api/heybox/automation/stop", { method: "POST" });
+          renderHeyboxAutomation(payload.heybox_automation || {});
+        } catch (error) {
+          showNotice(error.message || "关闭小黑盒浏览器失败", "error");
+          showResultDialog("关闭失败", error.message || "关闭小黑盒浏览器失败", "error");
+        }
+      });
+
+      heyboxAutomationClose?.addEventListener("click", () => {
+        heyboxAutomationDialog.hidden = true;
+      });
+
+      heyboxAutomationScreen?.addEventListener("click", async (event) => {
+        const rect = heyboxAutomationScreen.getBoundingClientRect();
+        const scaleX = heyboxAutomationScreen.naturalWidth / rect.width;
+        const scaleY = heyboxAutomationScreen.naturalHeight / rect.height;
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
+        try {
+          await callApi("/api/heybox/automation/click", {
+            method: "POST",
+            body: JSON.stringify({ x, y })
+          });
+          window.setTimeout(() => refreshHeyboxAutomationScreenshot(), 450);
+        } catch (error) {
+          showNotice(error.message || "浏览器点击失败", "error");
+        }
+      });
+
+      heyboxAutomationType?.addEventListener("click", async () => {
+        const text = heyboxAutomationText.value || "";
+        if (!text) return;
+        try {
+          await callApi("/api/heybox/automation/type", {
+            method: "POST",
+            body: JSON.stringify({ text })
+          });
+          heyboxAutomationText.value = "";
+          window.setTimeout(() => refreshHeyboxAutomationScreenshot(), 450);
+        } catch (error) {
+          showNotice(error.message || "浏览器输入失败", "error");
+        }
+      });
+
+      heyboxAutomationEnter?.addEventListener("click", async () => {
+        try {
+          await callApi("/api/heybox/automation/press", {
+            method: "POST",
+            body: JSON.stringify({ key: "Enter" })
+          });
+          window.setTimeout(() => refreshHeyboxAutomationScreenshot(), 450);
+        } catch (error) {
+          showNotice(error.message || "浏览器按键失败", "error");
+        }
+      });
+
+      heyboxAutomationRefresh?.addEventListener("click", () => {
+        refreshHeyboxAutomationScreenshot();
+      });
+
+      document.querySelectorAll(".draft-sync-wechat").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+          const confirmed = window.confirm("将把这篇文章同步到微信公众号草稿箱，不会发布。确认继续？");
+          if (!confirmed) return;
+          const draftIndex = event.currentTarget.dataset.draftIndex;
+          try {
+            await runInlineAction(event.currentTarget, "同步草稿箱", `/api/drafts/${draftIndex}/sync-wechat`, {
+              method: "POST"
+            });
+          } catch (error) {
+            return;
+          }
+        });
+      });
+
+      const firstRecordDate = document.querySelector(".record-date-tab.is-active")?.dataset.recordDate;
+      if (firstRecordDate) {
+        document.querySelectorAll(".record-card").forEach((card) => {
+          card.hidden = card.dataset.recordDate !== firstRecordDate;
+        });
+      }
+
+      document.querySelector(".draft-list")?.addEventListener("click", async (event) => {
+        if (event.target.closest(".image-slot-tab")) {
+          return;
+        }
+
+        const zoomTarget = event.target.closest(".image-zoom-button, .zoomable-image");
+        if (zoomTarget) {
+          const src = zoomTarget.dataset.fullSrc || zoomTarget.src;
+          lightboxImage.src = src;
+          lightbox.hidden = false;
+          return;
+        }
+
+        const generateButton = event.target.closest(".slot-image-generate");
+        if (generateButton) {
+          const draftCard = generateButton.closest(".draft-card");
+          const draftIndex = generateButton.dataset.draftIndex;
+          const slotId = generateButton.dataset.slotId;
+          try {
+            const payload = await runInlineAction(generateButton, "生成配图", `/api/drafts/${draftIndex}/image-slots/${slotId}/generate`, { method: "POST" });
+            appendGeneratedCandidate(draftCard, slotId, payload.image);
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+
+        const importButton = event.target.closest(".slot-image-import");
+        if (importButton) {
+          const draftCard = importButton.closest(".draft-card");
+          const slotId = importButton.dataset.slotId;
+          const input = draftCard.querySelector(`.slot-image-file[data-slot-id="${CSS.escape(slotId)}"]`);
+          if (input) input.click();
+          return;
+        }
+
+        const screenshotButton = event.target.closest(".slot-image-screenshot");
+        if (screenshotButton) {
+          const draftCard = screenshotButton.closest(".draft-card");
+          const draftIndex = screenshotButton.dataset.draftIndex;
+          const slotId = screenshotButton.dataset.slotId;
+          try {
+            const payload = await runInlineAction(
+              screenshotButton,
+              "官网截图",
+              `/api/drafts/${draftIndex}/image-slots/${slotId}/official-screenshot`,
+              { method: "POST" }
+            );
+            const selected = payload.selected_image || {};
+            appendOfficialScreenshotCandidates(draftCard, slotId, payload.candidates || [selected], selected.url || "");
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+
+        const selectButton = event.target.closest(".slot-image-select");
+        if (selectButton) {
+          const draftCard = selectButton.closest(".draft-card");
+          const draftIndex = selectButton.dataset.draftIndex;
+          const slotId = selectButton.dataset.slotId;
+          const imageUrl = selectButton.dataset.imageUrl;
+          try {
+            const payload = await runInlineAction(selectButton, "切换配图", `/api/drafts/${draftIndex}/image-slots/${slotId}/select`, {
+              method: "POST",
+              body: JSON.stringify({ url: imageUrl })
+            });
+            const selected = payload.selected_image || {};
+            updateSlotSelection(draftCard, slotId, selected.url || imageUrl, selected.type || "image", true);
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+
+        const captionButton = event.target.closest(".slot-image-caption-save");
+        if (captionButton) {
+          const draftCard = captionButton.closest(".draft-card");
+          const draftIndex = captionButton.dataset.draftIndex;
+          const slotId = captionButton.dataset.slotId;
+          const editor = captionButton.closest(".image-caption-editor");
+          const caption = editor?.querySelector(".slot-image-caption-input")?.value || "";
+          try {
+            const payload = await runInlineAction(captionButton, "保存图解", `/api/drafts/${draftIndex}/image-slots/${slotId}/caption`, {
+              method: "PUT",
+              body: JSON.stringify({ caption })
+            });
+            updateSlotCaptionInUi(draftCard, slotId, payload.selected_image || {}, payload.caption || caption);
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+
+        const clearButton = event.target.closest(".slot-image-clear");
+        if (clearButton) {
+          const draftCard = clearButton.closest(".draft-card");
+          const draftIndex = clearButton.dataset.draftIndex;
+          const slotId = clearButton.dataset.slotId;
+          try {
+            await runInlineAction(clearButton, "清空配图", `/api/drafts/${draftIndex}/image-slots/${slotId}/selection`, {
+              method: "DELETE"
+            });
+            clearSlotSelectionInUi(draftCard, slotId);
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+
+        const deleteButton = event.target.closest(".slot-image-delete");
+        if (deleteButton) {
+          const draftCard = deleteButton.closest(".draft-card");
+          const draftIndex = deleteButton.dataset.draftIndex;
+          const slotId = deleteButton.dataset.slotId;
+          const imageUrl = deleteButton.dataset.imageUrl;
+          const card = deleteButton.closest(".image-candidate-card");
+          try {
+            const payload = await runInlineAction(deleteButton, "删除配图", `/api/drafts/${draftIndex}/image-slots/${slotId}/candidate`, {
+              method: "DELETE",
+              body: JSON.stringify({ url: imageUrl })
+            });
+            draftCard.querySelectorAll(".image-candidate-card").forEach((item) => {
+              if (item.dataset.imageUrl === imageUrl) item.remove();
+            });
+            if (card && card.isConnected) card.remove();
+            const selected = payload.selected_image || null;
+            if (selected && selected.url) {
+              updateSlotSelection(draftCard, slotId, selected.url, selected.type || "image", true);
+            } else {
+              clearSlotSelectionInUi(draftCard, slotId);
+            }
+            await refreshVariantPreviewForDraft(draftCard);
+          } catch (error) {
+            return;
+          }
+          return;
+        }
+      });
+
+      document.querySelector(".draft-list")?.addEventListener("change", async (event) => {
+        const input = event.target.closest(".slot-image-file");
+        if (!input || !input.files || !input.files[0]) return;
+        const draftCard = input.closest(".draft-card");
+        const draftIndex = input.dataset.draftIndex;
+        const slotId = input.dataset.slotId;
+        const formData = new FormData();
+        Array.from(input.files).forEach((file) => {
+          formData.append("image", file);
+        });
+        try {
+          const payload = await callApi(`/api/drafts/${draftIndex}/image-slots/${slotId}/import`, {
+            method: "POST",
+            body: formData
+          });
+          const selected = payload.selected_image || {};
+          const images = payload.images || (selected.url ? [selected] : []);
+          images.slice().reverse().forEach((image) => {
+            appendImportedCandidate(draftCard, slotId, image);
+          });
+          if (selected.url) {
+            updateSlotSelection(draftCard, slotId, selected.url, "manual_upload", true);
+          }
+          await refreshVariantPreviewForDraft(draftCard);
+          showNotice(payload.message || "图片已导入。", "success");
+          showResultDialog("导入成功", payload.message || "图片已导入。", "success");
+        } catch (error) {
+          showNotice(error.message || "导入图片失败", "error");
+          showResultDialog("导入失败", error.message || "导入图片失败", "error");
+        } finally {
+          input.value = "";
+        }
+      });
+
+      lightboxClose.addEventListener("click", () => {
+        lightbox.hidden = true;
+        lightboxImage.src = "";
+      });
+
+      lightbox.addEventListener("click", (event) => {
+        if (event.target === lightbox) {
+          lightbox.hidden = true;
+          lightboxImage.src = "";
+        }
+      });
+
+      resultDialogClose.addEventListener("click", () => {
+        resultDialog.hidden = true;
+      });
+
+      resultDialog.addEventListener("click", (event) => {
+        if (event.target === resultDialog) {
+          resultDialog.hidden = true;
+        }
+      });
+
+      copyFallbackClose.addEventListener("click", () => {
+        copyFallback.hidden = true;
+      });
+
+      copyFallback.addEventListener("click", (event) => {
+        if (event.target === copyFallback) {
+          copyFallback.hidden = true;
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !lightbox.hidden) {
+          lightbox.hidden = true;
+          lightboxImage.src = "";
+        }
+        if (event.key === "Escape" && !resultDialog.hidden) {
+          resultDialog.hidden = true;
+        }
+        if (event.key === "Escape" && !copyFallback.hidden) {
+          copyFallback.hidden = true;
+        }
+      });
+    </script>
+  </body>
+</html>
